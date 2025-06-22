@@ -91,7 +91,7 @@ h1, h2 {
   flex-direction: column;
   gap: 10px;
   width: 100%;
-  max-width: 800px;
+  max-width: 900px; /* 加大最大寬度 */
   margin: 0 auto;
 }
 
@@ -105,8 +105,7 @@ h1, h2 {
 /* 輸入框 */
 #room-name,
 #message-input {
-  flex: 1;
-  width: 100%;
+  flex-grow: 1;           /* 撐滿剩餘空間 */
   padding: 12px 16px;
   border: 1px solid #ccc;
   border-radius: 8px;
@@ -116,8 +115,20 @@ h1, h2 {
   min-height: 60px;
   max-height: 180px;
   overflow-y: auto;
+  box-sizing: border-box; /* 包含 padding 與 border 在寬度計算 */
+  width: auto;            /* 避免固定寬度導致窄小 */
 }
 
+/* 送出按鈕 */
+#send-btn {
+  flex-shrink: 0;      /* 不縮小 */
+  width: 120px;        /* 固定寬度 */
+  padding: 12px 16px;
+  font-size: 1rem;
+  border-radius: 8px;
+}
+
+/* 聚焦狀態 */
 #room-name:focus,
 #message-input:focus {
   border-color: #011a50;
@@ -254,5 +265,10 @@ h1, h2 {
   #message-input {
     min-height: 48px;
     font-size: 0.95rem;
+  }
+
+  #send-btn {
+    width: 100px;
+    font-size: 0.9rem;
   }
 }
