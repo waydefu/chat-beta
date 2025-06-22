@@ -1,5 +1,5 @@
 // main.js
-import { auth, provider, firestore, rtdb } from './firebase-config.js';
+import { auth, provider, firestore, rtdb, app } from './firebase-config.js';
 import {
   signInWithPopup,
   signOut,
@@ -288,19 +288,36 @@ function setupPresence(user) {
 
   const onlineObj = {
     state: 'online',
-    displayName: user.displayName,
+    displayName: user.displayName || '匿名使用者',
     last_changed: dbServerTimestamp()
   };
   const offlineObj = {
     state: 'offline',
+    displayName: user.displayName || '匿名使用者',
     last_changed: dbServerTimestamp()
   };
 
+  // 立即設置在線狀態
+  set(userRef, onlineObj).catch(error => {
+    console.error('設置在線狀態失敗：', user.uid, error.message);
+  });
+
+  // 監聽連線狀態
   onValue(connRef, snap => {
-    if (snap.val() === false) return;
+    console.log('Connection status:', snap.val());
+    if (snap.val() === false) {
+      console.log('Disconnected:', user.uid);
+      return;
+    }
     onDisconnect(userRef).set(offlineObj).then(() => {
-      set(userRef, onlineObj);
+      set(userRef, onlineObj).catch(error => {
+        console.error('更新在線狀態失敗：', user.uid, error.message);
+      });
+    }).catch(error => {
+      console.error('設置斷線處理失敗：', user.uid, error.message);
     });
+  }, error => {
+    console.error('監聽連線狀態失敗：', error.message);
   });
 }
 
@@ -308,14 +325,24 @@ function watchPresence() {
   const allRef = ref(rtdb, 'presence');
   onValue(allRef, snap => {
     const users = snap.val() || {};
+    console.log('Presence data:', users);
     presenceList.innerHTML = `<h3>🟢 在線使用者</h3>`;
-    for (const uid in users) {
-      if (users[uid].state === 'online') {
-        const div = document.createElement('div');
-        div.textContent = users[uid].displayName || uid;
-        presenceList.appendChild(div);
+    if (Object.keys(users).length === 0) {
+      const div = document.createElement('div');
+      div.textContent = '無在線使用者';
+      presenceList.appendChild(div);
+    } else {
+      for (const uid in users) {
+        if (users[uid].state === 'online') {
+          const div = document.createElement('div');
+          div.textContent = users[uid].displayName || uid;
+          presenceList.appendChild(div);
+        }
       }
     }
+  }, error => {
+    console.error('監聽在線使用者失敗：', error.message);
+    presenceList.innerHTML = `<h3>🟢 在線使用者</h3><div>無法載入使用者列表</div>`;
   });
 }
 
