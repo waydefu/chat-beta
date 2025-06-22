@@ -4,24 +4,32 @@ import { getAuth, GoogleAuthProvider } from 'https://www.gstatic.com/firebasejs/
 import { getFirestore } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
 import { getDatabase } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js';
 
-// !!! 警告：請將敏感資訊移到後端或使用環境變數
+// !!! 警告：請使用環境變數或後端載入配置
+// 示例：Vite 的 .env 檔案
+// VITE_FIREBASE_API_KEY=your-api-key
+// const firebaseConfig = {
+//   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+//   // ...
+// };
 const firebaseConfig = {
-  apiKey: 'AIzaSyDOyp-qGQxiiBi9WC_43YFGt94kUZn7goI',
-  authDomain: 'f-chat-wayde-fu.firebaseapp.com',
-  projectId: 'f-chat-wayde-fu',
-  appId: '1:838739455782:web:e7538f588ae374d204dbe7',
-  databaseURL: 'https://f-chat-wayde-fu-default-rtdb.firebaseio.com'
+  apiKey: 'YOUR_API_KEY', // 替換為您的 API 金鑰
+  authDomain: 'YOUR_AUTH_DOMAIN', // 替換為您的認證網域
+  projectId: 'YOUR_PROJECT_ID', // 替換為您的專案 ID
+  appId: 'YOUR_APP_ID', // 替換為您的應用 ID
+  databaseURL: 'YOUR_DATABASE_URL' // 替換為您的 Realtime Database URL
 };
 
 let app;
 try {
-  app = initializeApp(firestoreConfig);
+  app = initializeApp(firebaseConfig);
+  console.log('Firebase 初始化成功');
 } catch (error) {
-  console.error('Firebase 初始化失敗：', error);
-  alert('應用初始化失敗，請稍後重試');
+  console.error('Firebase 初始化失敗：', error.message, error.code);
+  alert('應用初始化失敗，請檢查網路或 Firebase 配置');
+  throw error; // 終止後續操作
 }
 
-export const auth = app ? getAuth(app) : null;
-export const provider = app ? new GoogleAuthProvider() : null;
-export const firestore = app ? getFirestore(app) : null;
-export const rtdb = app ? getDatabase(app) : null;
+export const auth = getAuth(app);
+export const provider = new GoogleAuthProvider();
+export const firestore = getFirestore(app);
+export const rtdb = getDatabase(app);
