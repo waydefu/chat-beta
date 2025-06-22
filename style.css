@@ -204,19 +204,23 @@ h1, h2 {
   color: #16a34a;
 }
 
-/* 正在輸入中提示 */
+/* ✅ 正在輸入中提示樣式 */
 #typing-indicator {
   font-size: 0.85rem;
-  color: #555;
-  padding-left: 10px;
+  color: #333;
+  background-color: #fff8dc;
+  padding: 6px 12px;
   margin-top: -5px;
-  height: 20px;
+  margin-bottom: 5px;
+  border-radius: 6px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  max-width: fit-content;
 }
 
 /* 輸入框和送出按鈕包裝器 */
 .message-input-wrapper {
   display: flex;
-  align-items: stretch; /* 高度一致 */
+  align-items: stretch;
   gap: 10px;
   width: 100%;
   max-width: 800px;
@@ -323,5 +327,9 @@ h1, h2 {
     height: 48px;
     font-size: 1rem;
     border-radius: 6px;
+  }
+
+  #typing-indicator {
+    max-width: 100%;
   }
 }
