@@ -15,11 +15,13 @@ body {
   align-items: flex-start;
   min-height: 100vh;
 }
+
 /* 置中標題 */
 h1, h2 {
   text-align: center;
   color: #333;
 }
+
 /* 容器最大寬度 */
 .container {
   width: 100%;
@@ -246,6 +248,7 @@ h1, h2 {
   border: 1px solid #ddd;
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
   color: #333;
+  display: block; /* 確保可見 */
 }
 
 #presence-list h3 {
@@ -256,10 +259,18 @@ h1, h2 {
 #presence-list div {
   padding: 8px 0;
   border-bottom: 1px solid #eee;
+  font-size: 0.9rem;
+  color: #555;
 }
 
 #presence-list div:last-child {
   border-bottom: none;
+}
+
+/* 空狀態樣式 */
+#presence-list div:empty::before {
+  content: '無在線使用者';
+  color: #999;
 }
 
 /* 正在輸入中提示 */
