@@ -15,7 +15,6 @@ body {
   align-items: flex-start;
   min-height: 100vh;
 }
-
 /* 置中標題 */
 h1, h2 {
   text-align: center;
