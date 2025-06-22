@@ -5,10 +5,10 @@ importScripts('https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging-com
 // !!! 警告：請從後端動態載入配置
 // 示例：fetch('/api/firebase-config').then(res => res.json()).then(config => firebase.initializeApp(config));
 const firebaseConfig = {
-  apiKey: 'YOUR_API_KEY', // 替換為您的 API 金鑰
-  projectId: 'YOUR_PROJECT_ID', // 替換為您的專案 ID
-  messagingSenderId: 'YOUR_MESSAGING_SENDER_ID', // 替換為您的發送者 ID
-  appId: 'YOUR_APP_ID' // 替換為您的應用 ID
+  apiKey: 'YOUR_API_KEY',
+  projectId: 'YOUR_PROJECT_ID',
+  messagingSenderId: 'YOUR_MESSAGING_SENDER_ID',
+  appId: 'YOUR_APP_ID'
 };
 
 if ('serviceWorker' in navigator && 'PushManager' in window) {
