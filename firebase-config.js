@@ -12,11 +12,13 @@ import { getDatabase } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase
 //   // ...
 // };
 const firebaseConfig = {
-  apiKey: 'YOUR_API_KEY', // 替換為您的 API 金鑰
-  authDomain: 'YOUR_AUTH_DOMAIN', // 替換為您的認證網域
-  projectId: 'YOUR_PROJECT_ID', // 替換為您的專案 ID
-  appId: 'YOUR_APP_ID', // 替換為您的應用 ID
-  databaseURL: 'YOUR_DATABASE_URL' // 替換為您的 Realtime Database URL
+  apiKey: "AIzaSyDOyp-qGQxiiBi9WC_43YFGt94kUZn7goI",
+  authDomain: "f-chat-wayde-fu.firebaseapp.com",
+  projectId: "f-chat-wayde-fu",
+  storageBucket: "f-chat-wayde-fu.firebasestorage.app",
+  messagingSenderId: "838739455782",
+  appId: "1:838739455782:web:e7538f588ae374d204dbe7",
+  databaseURL: "https://f-chat-wayde-fu-default-rtdb.firebaseio.com"
 };
 
 let app;
