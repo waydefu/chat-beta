@@ -16,7 +16,8 @@ import {
   setDoc,
   doc,
   updateDoc,
-  arrayUnion
+  arrayUnion,
+  getDoc
 } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
 import {
   ref,
@@ -43,6 +44,7 @@ const roomList = document.getElementById('room-list');
 // === 狀態 ===
 let currentRoom = '';
 let unsubscribe = null;
+const userNameCache = new Map(); // 快取 UID -> 顯示名稱
 
 // === 工具函數 ===
 function sanitizeInput(text) {
@@ -51,8 +53,24 @@ function sanitizeInput(text) {
   return div.innerHTML;
 }
 
+// 查詢使用者顯示名稱
+async function getUserDisplayName(uid) {
+  if (userNameCache.has(uid)) {
+    return userNameCache.get(uid);
+  }
+  try {
+    const userDoc = await getDoc(doc(firestore, 'users', uid));
+    const displayName = userDoc.exists() ? userDoc.data().displayName : '未知使用者';
+    userNameCache.set(uid, displayName);
+    return displayName;
+  } catch (error) {
+    console.error('查詢使用者名稱失敗：', uid, error.message);
+    return '未知使用者';
+  }
+}
+
 // 渲染單條訊息
-function appendMessage(msg, uid) {
+async function appendMessage(msg, uid) {
   let time = '';
   try {
     if (msg.timestamp && typeof msg.timestamp.toDate === 'function') {
@@ -68,6 +86,13 @@ function appendMessage(msg, uid) {
 
   const side = msg.uid === uid ? 'you' : 'other';
 
+  // 獲取已讀者名稱
+  let readByText = '';
+  if (msg.readBy && msg.readBy.length > 0) {
+    const readByNames = await Promise.all(msg.readBy.map(getUserDisplayName));
+    readByText = `已讀：${readByNames.join('、')}`;
+  }
+
   const row = document.createElement('div');
   row.className = `message-row ${side}`;
 
@@ -81,7 +106,7 @@ function appendMessage(msg, uid) {
   bubble.innerHTML = `
     <span class="message-text">${sanitizeInput(msg.text)}</span>
     <span class="message-time">${time}</span>
-    <span class="read-status" data-msg-id="${msg.id}">${msg.readBy?.includes(uid) ? '✔' : ''}</span>
+    <span class="read-status" data-msg-id="${msg.id}" title="${readByText}">${msg.readBy?.includes(uid) ? '✔' : ''}</span>
   `;
 
   if (side === 'you') {
@@ -104,7 +129,7 @@ async function markMessageAsRead(msgId, uid) {
       readBy: arrayUnion(uid)
     });
   } catch (error) {
-    console.error('標記已讀失敗：', error);
+    console.error('標記已讀失敗：', error.message);
   }
 }
 
@@ -136,6 +161,12 @@ onAuthStateChanged(auth, user => {
     loginBtn.style.display = 'none';
     chatBox.setAttribute('role', 'log');
     chatBox.setAttribute('aria-live', 'polite');
+    // 儲存使用者顯示名稱
+    setDoc(doc(firestore, 'users', user.uid), {
+      displayName: user.displayName || '匿名使用者'
+    }, { merge: true }).catch(error => {
+      console.error('儲存使用者名稱失敗：', error.message);
+    });
     setupPresence(user);
     watchPresence();
     watchRoomList();
@@ -149,6 +180,7 @@ onAuthStateChanged(auth, user => {
     chatBox.innerHTML = '';
     roomList.innerHTML = '<option disabled selected>選擇聊天室</option>';
     if (unsubscribe) unsubscribe();
+    userNameCache.clear();
   }
 });
 
@@ -173,12 +205,12 @@ joinRoomBtn.onclick = async () => {
 
     unsubscribe = onSnapshot(q, snap => {
       const uid = auth.currentUser?.uid;
-      snap.docChanges().forEach(change => {
+      snap.docChanges().forEach(async change => {
         if (change.type === 'added') {
           const msg = { id: change.doc.id, ...change.doc.data() };
-          appendMessage(msg, uid);
+          await appendMessage(msg, uid);
           if (!msg.readBy?.includes(uid)) {
-            markMessageAsRead(msg.id, uid);
+            await markMessageAsRead(msg.id, uid);
           }
         }
       });
@@ -233,7 +265,7 @@ sendBtn.onclick = async () => {
       readBy: [user.uid]
     });
 
-    console.log('訊息已發送，ID：', messageRef.id); // 確認寫入
+    console.log('訊息已發送，ID：', messageRef.id);
     messageInput.value = '';
   } catch (error) {
     console.error('發送訊息失敗：', error.message, error.code);
