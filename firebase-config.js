@@ -12,13 +12,11 @@ import { getDatabase } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase
 //   // ...
 // };
 const firebaseConfig = {
-  apiKey: "AIzaSyDOyp-qGQxiiBi9WC_43YFGt94kUZn7goI",
-  authDomain: "f-chat-wayde-fu.firebaseapp.com",
-  projectId: "f-chat-wayde-fu",
-  storageBucket: "f-chat-wayde-fu.firebasestorage.app",
-  messagingSenderId: "838739455782",
-  appId: "1:838739455782:web:e7538f588ae374d204dbe7",
-  databaseURL: "https://f-chat-wayde-fu-default-rtdb.firebaseio.com"
+  apiKey: 'YOUR_API_KEY',
+  authDomain: 'YOUR_AUTH_DOMAIN',
+  projectId: 'YOUR_PROJECT_ID',
+  appId: 'YOUR_APP_ID',
+  databaseURL: 'YOUR_DATABASE_URL'
 };
 
 let app;
@@ -28,7 +26,7 @@ try {
 } catch (error) {
   console.error('Firebase 初始化失敗：', error.message, error.code);
   alert('應用初始化失敗，請檢查網路或 Firebase 配置');
-  throw error; // 終止後續操作
+  throw error;
 }
 
 export const auth = getAuth(app);
