@@ -5,7 +5,7 @@ body {
   background-position: center;
   background-repeat: no-repeat;
   background-attachment: fixed;
-  background-color: #f3f4f6; /* 後備背景色 */
+  background-color: #f3f4f6;
   font-family: 'Segoe UI', 'Arial', 'Noto Sans TC', sans-serif;
   color: #333;
   margin: 0;
@@ -197,7 +197,9 @@ h1, h2 {
 
 .message-time {
   font-size: 0.75rem;
-  opacity: 0.6;
+  opacity: 0.8;
+  display: inline-block;
+  margin-left: 5px;
 }
 
 /* 已讀標記 */
@@ -206,6 +208,35 @@ h1, h2 {
   color: #16a34a;
   margin-left: 5px;
   vertical-align: middle;
+  position: relative;
+  cursor: help;
+}
+
+/* 工具提示 */
+.read-status[title]:hover::after {
+  content: attr(title);
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #333;
+  color: white;
+  padding: 5px 10px;
+  border-radius: 5px;
+  font-size: 0.8rem;
+  white-space: nowrap;
+  z-index: 10;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+}
+
+.read-status[title]:hover::before {
+  content: '';
+  position: absolute;
+  bottom: calc(100% - 5px);
+  left: 50%;
+  transform: translateX(-50%);
+  border: 5px solid transparent;
+  border-top-color: #333;
 }
 
 /* 在線使用者清單 */
