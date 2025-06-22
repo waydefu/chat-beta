@@ -229,4 +229,8 @@ async function loadRoomList() {
   roomList.onchange = () => {
     roomInput.value = roomList.value;
   };
+  messageInput.addEventListener("input", () => {
+  messageInput.style.height = "auto";
+  messageInput.style.height = messageInput.scrollHeight + "px";
+});
 }
