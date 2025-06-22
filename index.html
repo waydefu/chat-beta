@@ -3,53 +3,128 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>🔥 Chat Lite</title>
-  <link rel="stylesheet" href="style.css" />
+  <title>🔥 Chat Lite 登入</title>
+
+  <!-- 字體 -->
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600&display=swap" rel="stylesheet">
+
+  <!-- 樣式 -->
+  <style>
+    /* 全站字體與背景設定 */
+    body {
+      margin: 0;
+      padding: 0;
+      font-family: 'Poppins', sans-serif;
+      background: linear-gradient(135deg, #1f1c2c, #928dab);
+      background-attachment: fixed;
+      background-size: cover;
+      min-height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      color: #fff;
+    }
+
+    /* 登入卡片包裝 */
+    .login-wrapper {
+      max-width: 400px;
+      width: 90%;
+      padding: 2rem;
+      background: rgba(255, 255, 255, 0.07);
+      border-radius: 1.5rem;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+      backdrop-filter: blur(10px);
+      text-align: center;
+      transition: transform 0.3s ease;
+    }
+
+    .login-wrapper:hover {
+      transform: scale(1.01);
+    }
+
+    /* LOGO 圖片 */
+    .avatar-placeholder {
+      width: 80px;
+      height: 80px;
+      margin-bottom: 1.5rem;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #3b82f6, #2563eb);
+      display: block;
+      margin-left: auto;
+      margin-right: auto;
+    }
+
+    /* 標題 */
+    .title {
+      font-size: 1.5rem;
+      margin: 0.5rem 0;
+      font-weight: 600;
+    }
+
+    .subtitle {
+      font-size: 0.9rem;
+      color: #ddd;
+      margin-bottom: 1.5rem;
+    }
+
+    /* Google 按鈕 */
+    .google-btn {
+      background: #ffffff;
+      color: #1a1a1a;
+      border: none;
+      padding: 12px 20px;
+      border-radius: 999px;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.25s ease;
+      width: 100%;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    }
+
+    .google-btn:hover {
+      background: #f3f3f3;
+      transform: scale(1.03);
+    }
+
+    .google-btn:active {
+      transform: scale(0.98);
+    }
+
+    .terms {
+      font-size: 0.75rem;
+      color: #aaa;
+      margin-top: 1rem;
+      user-select: none;
+    }
+
+    /* 響應式 */
+    @media (max-width: 480px) {
+      .login-wrapper {
+        padding: 1.5rem;
+      }
+
+      .title {
+        font-size: 1.25rem;
+      }
+
+      .google-btn {
+        font-size: 0.95rem;
+      }
+    }
+  </style>
 </head>
+
 <body>
   <div class="login-wrapper">
-
-    <!-- 登入卡片 -->
-    <div class="login-card auth-section" id="login-card">
-      <img src="image/logo.png" alt="Logo" class="avatar-placeholder" />
-      <h1 class="title">歡迎來到 <strong>Chat Lite Beta</strong></h1>
-      <p class="subtitle" id="user-info"></p>
-
-      <button id="login-btn" class="google-btn">使用 Google 登入</button>
-
-      <p class="terms">登入即表示您同意我們的服務條款。</p>
-    </div>
-
-    <!-- 聊天室區塊 -->
-    <div id="chat-section" class="chat-section" style="display:none;">
-      <!-- 登出按鈕，獨立放在聊天室區塊上方 -->
-      <button id="logout-btn" class="google-btn" style="display:none; margin-bottom: 10px;">登出</button>
-
-      <div class="room-section">
-        <input type="text" id="room-name" placeholder="聊天室名稱" />
-        <button id="join-room">加入 / 建立聊天室</button>
-      </div>
-
-      <div class="chat-container">
-        <div id="chat-box" class="chat-box">
-          <!-- 訊息顯示區 -->
-        </div>
-
-        <div id="presence-list" class="presence-list">
-          <h3>🟢 在線使用者</h3>
-          <!-- 在線使用者列表 -->
-        </div>
-      </div>
-
-      <div class="message-input-section">
-        <input type="text" id="message-input" placeholder="輸入訊息..." />
-        <button id="send-btn">送出</button>
-      </div>
-    </div>
-
-    <footer>© 2025 Chat Lite. 保留一切權利。</footer>
+    <img src="image/logo.png" alt="Logo" class="avatar-placeholder" />
+    <h1 class="title">歡迎來到 <strong>Chat Lite Beta</strong></h1>
+    <p class="subtitle" id="user-info">請使用 Google 登入</p>
+    <button id="login-btn" class="google-btn">使用 Google 登入</button>
+    <p class="terms">登入即表示您同意我們的服務條款。</p>
   </div>
 
+  <!-- JavaScript 登入功能載入點 -->
   <script type="module" src="./main.js"></script>
 </body>
 </html>
