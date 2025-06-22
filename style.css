@@ -97,14 +97,26 @@ h1, h2 {
 #room-name,
 #message-input {
   width: 100%;
-  padding: 10px;
+  padding: 10px 14px;
   border: 1px solid #ccc;
-  border-radius: 6px;
+  border-radius: 8px;
   background-color: #fff;
   color: #333;
   font-size: 1rem;
+  line-height: 1.4;
   box-sizing: border-box;
+  resize: none;
+  min-height: 40px;
+  max-height: 120px;
+  overflow-y: auto;
+  flex: 1;
 }
+.message-input-section {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+}
+
 
 #room-name:focus,
 #message-input:focus {
