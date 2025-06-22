@@ -297,10 +297,24 @@ function setupPresence(user) {
     last_changed: dbServerTimestamp()
   };
 
-  // 立即設置在線狀態
-  set(userRef, onlineObj).catch(error => {
-    console.error('設置在線狀態失敗：', user.uid, error.message);
-  });
+  // 立即設置在線狀態並重試
+  const setOnlineWithRetry = async (retries = 3, delay = 1000) => {
+    for (let i = 0; i < retries; i++) {
+      try {
+        await set(userRef, onlineObj);
+        console.log('設置在線狀態成功：', user.uid, onlineObj);
+        return;
+      } catch (error) {
+        console.error(`設置在線狀態失敗（第 ${i + 1} 次）：`, user.uid, error.message);
+        if (i < retries - 1) {
+          await new Promise(resolve => setTimeout(resolve, delay));
+        }
+      }
+    }
+    console.error('設置在線狀態最終失敗：', user.uid);
+  };
+
+  setOnlineWithRetry();
 
   // 監聽連線狀態
   onValue(connRef, snap => {
@@ -333,7 +347,7 @@ function watchPresence() {
       presenceList.appendChild(div);
     } else {
       for (const uid in users) {
-        if (users[uid].state === 'online') {
+        if (users[uid]?.state === 'online') {
           const div = document.createElement('div');
           div.textContent = users[uid].displayName || uid;
           presenceList.appendChild(div);
@@ -341,8 +355,8 @@ function watchPresence() {
       }
     }
   }, error => {
-    console.error('監聽在線使用者失敗：', error.message);
-    presenceList.innerHTML = `<h3>🟢 在線使用者</h3><div>無法載入使用者列表</div>`;
+    console.error('監聽在線使用者失敗：', error.message, error.code);
+    presenceList.innerHTML = `<h3>🟢 在線使用者</h3><div>無法載入使用者列表：${error.message}</div>`;
   });
 }
 
