@@ -5,7 +5,8 @@ body {
   background-position: center;
   background-repeat: no-repeat;
   background-attachment: fixed;
-  font-family: 'Segoe UI', 'Arial', sans-serif;
+  background-color: #f3f4f6; /* 後備背景色 */
+  font-family: 'Segoe UI', 'Arial', 'Noto Sans TC', sans-serif;
   color: #333;
   margin: 0;
   padding: 10px;
@@ -33,7 +34,7 @@ h1, h2 {
   color: #333;
   border-radius: 12px;
   padding: 30px 25px 40px 25px;
-  box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
   text-align: center;
   margin-bottom: 20px;
 }
@@ -57,18 +58,19 @@ h1, h2 {
 #join-room,
 #send-btn,
 .google-btn {
-  background-color: #011749;
+  background: linear-gradient(135deg, #011749, #021548);
   border: none;
-  padding: 10px 16px;
-  border-radius: 6px;
+  padding: 12px 20px;
+  border-radius: 12px;
   color: white;
   cursor: pointer;
   margin: 5px auto;
-  transition: background-color 0.3s ease;
+  font-weight: 500;
   font-size: 1rem;
   width: 100%;
   max-width: 300px;
   display: block;
+  transition: background 0.3s ease;
 }
 
 #login-btn:hover,
@@ -76,12 +78,20 @@ h1, h2 {
 #join-room:hover,
 #send-btn:hover,
 .google-btn:hover {
-  background-color: #021548;
+  background: linear-gradient(135deg, #021548, #032a5b);
+}
+
+#login-btn:focus,
+#logout-btn:focus,
+#join-room:focus,
+#send-btn:focus {
+  outline: 2px solid #011849;
+  outline-offset: 2px;
 }
 
 /* 服務條款文字 */
 .terms {
-  color: #666;
+  color: #555;
   font-size: 0.85rem;
   user-select: none;
   margin-top: 10px;
@@ -106,12 +116,12 @@ h1, h2 {
 
 /* 聊天訊息區 */
 #chat-box {
-  background-color: #fff;
+  background: #fafafa;
   border: 1px solid #ddd;
   border-radius: 8px;
-  padding: 10px;
-  height: 60vh;
-  max-height: 70vh;
+  padding: 15px;
+  height: calc(100vh - 250px);
+  max-height: calc(100vh - 200px);
   overflow-y: auto;
   scroll-behavior: smooth;
   display: flex;
@@ -161,10 +171,11 @@ h1, h2 {
   animation: fadeIn 0.3s ease;
   font-size: 0.9rem;
   line-height: 1.3;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
 .message.you {
-  background-color: #0b3ead;
+  background: linear-gradient(135deg, #3b82f6, #2563eb);
   color: white;
   border-bottom-right-radius: 0;
   text-align: right;
@@ -172,7 +183,7 @@ h1, h2 {
 }
 
 .message.other {
-  background-color: #e5e7eb;
+  background: #e5e7eb;
   color: #333;
   border-bottom-left-radius: 0;
   text-align: left;
@@ -189,13 +200,22 @@ h1, h2 {
   opacity: 0.6;
 }
 
+/* 已讀標記 */
+.read-status {
+  font-size: 0.7rem;
+  color: #16a34a;
+  margin-left: 5px;
+  vertical-align: middle;
+}
+
 /* 在線使用者清單 */
 #presence-list {
   margin-top: 10px;
-  background-color: #f3f4f6;
-  padding: 10px;
-  border-radius: 6px;
+  background: #fff;
+  padding: 15px;
+  border-radius: 8px;
   border: 1px solid #ddd;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
   color: #333;
 }
 
@@ -204,15 +224,24 @@ h1, h2 {
   color: #16a34a;
 }
 
-/* ✅ 正在輸入中提示樣式 */
+#presence-list div {
+  padding: 8px 0;
+  border-bottom: 1px solid #eee;
+}
+
+#presence-list div:last-child {
+  border-bottom: none;
+}
+
+/* 正在輸入中提示 */
 #typing-indicator {
   font-size: 0.85rem;
-  color: #333;
-  background-color: #fff8dc;
-  padding: 6px 12px;
+  color: #1e40af;
+  background: #f0f9ff;
+  padding: 8px 14px;
   margin: 0 0 8px 0;
-  border-radius: 6px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  border-radius: 12px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.1);
   max-width: fit-content;
   box-sizing: border-box;
 }
@@ -228,41 +257,23 @@ h1, h2 {
 
 #message-input {
   flex: 1;
-  padding: 12px 16px;
+  padding: 14px 18px;
   border: 1px solid #ccc;
-  border-radius: 8px;
-  background-color: #fff;
+  border-radius: 12px;
+  background: #fff;
   font-size: 1rem;
   resize: none;
   min-height: 60px;
   max-height: 180px;
   overflow-y: auto;
   box-sizing: border-box;
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.05);
 }
 
 #message-input:focus {
-  border-color: #011a50;
+  border-color: #011849;
   outline: none;
-  box-shadow: 0 0 5px #011849;
-}
-
-#send-btn {
-  max-width: 120px;
-  height: 60px;
-  padding: 0 16px;
-  font-size: 1rem;
-  border-radius: 8px;
-  white-space: nowrap;
-  flex-shrink: 0;
-  cursor: pointer;
-  background-color: #011749;
-  color: white;
-  border: none;
-  transition: background-color 0.3s ease;
-}
-
-#send-btn:hover {
-  background-color: #021548;
+  box-shadow: 0 0 8px rgba(1, 24, 73, 0.2);
 }
 
 /* 聊天室名稱與下拉選單 */
@@ -275,16 +286,18 @@ h1, h2 {
 #room-name,
 #room-list {
   flex: 1;
-  padding: 10px;
-  font-size: 1rem;
+  padding: 12px;
   border-radius: 8px;
   border: 1px solid #ccc;
-  box-sizing: border-box;
+  background: #fff;
+  font-size: 1rem;
+  transition: border-color 0.3s ease, box-shadow 0.3s ease;
 }
 
 #room-name:focus,
 #room-list:focus {
   border-color: #011849;
+  box-shadow: 0 0 8px rgba(1, 24, 73, 0.2);
   outline: none;
 }
 
@@ -303,7 +316,7 @@ h1, h2 {
 /* 手機響應式 */
 @media (max-width: 600px) {
   #chat-box {
-    height: 50vh;
+    height: calc(100vh - 300px);
   }
 
   .message {
