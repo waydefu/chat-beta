@@ -5,10 +5,13 @@ importScripts('https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging-com
 // !!! 警告：請從後端動態載入配置
 // 示例：fetch('/api/firebase-config').then(res => res.json()).then(config => firebase.initializeApp(config));
 const firebaseConfig = {
-  apiKey: 'YOUR_API_KEY',
-  projectId: 'YOUR_PROJECT_ID',
-  messagingSenderId: 'YOUR_MESSAGING_SENDER_ID',
-  appId: 'YOUR_APP_ID'
+  apiKey: "AIzaSyDOyp-qGQxiiBi9WC_43YFGt94kUZn7goI",
+  authDomain: "f-chat-wayde-fu.firebaseapp.com",
+  projectId: "f-chat-wayde-fu",
+  storageBucket: "f-chat-wayde-fu.firebasestorage.app",
+  messagingSenderId: "838739455782",
+  appId: "1:838739455782:web:e7538f588ae374d204dbe7",
+  databaseURL: "https://f-chat-wayde-fu-default-rtdb.firebaseio.com"
 };
 
 if ('serviceWorker' in navigator && 'PushManager' in window) {
