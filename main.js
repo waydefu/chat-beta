@@ -1,4 +1,4 @@
-import { auth, provider, firestore, rtdb } from './firebase-config.js';Add commentMore actions
+import { auth, provider, firestore, rtdb } from './firebase-config.js';
 import {
   signInWithPopup,
   signOut,
@@ -164,5 +164,5 @@ function watchPresence() {
         presenceList.appendChild(div);
       }
     }
-  });Add commentMore actions
+  });
 }

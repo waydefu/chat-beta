@@ -1,5 +1,5 @@
-/* 全站字體與背景設定 */
-body {Add commentMore actions
+/* 基本字體與背景 */
+body {
   background-image: url('image/背景.png');
   background-size: cover;      /* 讓背景圖鋪滿整個頁面 */
   background-position: center; /* 置中背景圖 */
@@ -230,5 +230,5 @@ h1, h2 {
   }
   .message {
     max-width: 90%;
-  }Add commentMore actions
+  }
 }
