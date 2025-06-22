@@ -42,13 +42,14 @@
           <!-- 訊息顯示區 -->
         </div>
 
-        <!-- 「正在輸入」提示 -->
-        <div class="message-input-section">
-          <p id="typing-indicator"></p>
-        </div>
-
-        <!-- 輸入框與送出按鈕 -->
+        <!-- 輸入區塊含提示 -->
         <div class="message-input-wrapper">
+          <!-- 「正在輸入中」提示 -->
+          <div class="message-input-indicator">
+            <p id="typing-indicator"></p>
+          </div>
+
+          <!-- 輸入框與送出按鈕 -->
           <textarea id="message-input" placeholder="輸入訊息..."></textarea>
           <button id="send-btn">送出</button>
         </div>
