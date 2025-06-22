@@ -290,9 +290,15 @@ h1, h2 {
   }
 
   #send-btn {
-    height: 48px;
-    font-size: 0.95rem;
-  }
+  max-width: 120px;        /* 寬度不要太小，讓字不擠 */
+  height: 60px;            /* 和 message-input 一樣高 */
+  padding: 0 16px;         /* 內距留寬一點 */
+  font-size: 1rem;
+  border-radius: 8px;
+  white-space: nowrap;     /* 防止文字換行 */
+  flex-shrink: 0;          /* 避免被擠壓變形 */
+}
+
 
   .message-input-wrapper {
     flex-direction: column;
