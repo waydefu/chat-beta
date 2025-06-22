@@ -53,7 +53,19 @@ function sanitizeInput(text) {
 
 // 渲染單條訊息
 function appendMessage(msg, uid) {
-  const time = msg.timestamp?.toDate().toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' }) || '';
+  let time = '';
+  try {
+    if (msg.timestamp && typeof msg.timestamp.toDate === 'function') {
+      time = msg.timestamp.toDate().toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' });
+    } else {
+      console.warn('無效的時間戳：', msg.id, msg.timestamp);
+      time = '未知時間';
+    }
+  } catch (error) {
+    console.error('渲染時間戳失敗：', msg.id, error.message);
+    time = '未知時間';
+  }
+
   const side = msg.uid === uid ? 'you' : 'other';
 
   const row = document.createElement('div');
@@ -213,7 +225,7 @@ sendBtn.onclick = async () => {
     const user = auth.currentUser;
     if (!text || !user || !currentRoom) return;
 
-    await addDoc(collection(firestore, 'rooms', currentRoom, 'messages'), {
+    const messageRef = await addDoc(collection(firestore, 'rooms', currentRoom, 'messages'), {
       user: user.displayName,
       uid: user.uid,
       text,
@@ -221,9 +233,10 @@ sendBtn.onclick = async () => {
       readBy: [user.uid]
     });
 
+    console.log('訊息已發送，ID：', messageRef.id); // 確認寫入
     messageInput.value = '';
   } catch (error) {
-    console.error('發送訊息失敗：', error);
+    console.error('發送訊息失敗：', error.message, error.code);
     alert('無法發送訊息，請稍後重試');
   }
 };
