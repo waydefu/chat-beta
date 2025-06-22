@@ -36,9 +36,28 @@ const presenceList = document.getElementById("presence-list");
 let currentRoom = "";
 let unsubscribe = null;
 
-// 🔐 登入 / 登出事件
-loginBtn.onclick = () => signInWithPopup(auth, provider);
-logoutBtn.onclick = () => signOut(auth);
+// 🔐 登入事件
+loginBtn.onclick = async () => {
+  try {
+    await signInWithPopup(auth, provider);
+    console.log("✅ 登入成功");
+  } catch (err) {
+    console.error("❌ 登入失敗:", err.message || err);
+    alert("登入失敗！請檢查網域授權與 Firebase 設定。");
+  }
+};
+
+// 🔓 登出事件
+logoutBtn.onclick = async () => {
+  try {
+    await signOut(auth);
+    console.log("👋 已登出");
+  } catch (err) {
+    console.error("❌ 登出失敗:", err.message || err);
+    alert("登出失敗！");
+  }
+};
+
 
 // 👤 監聽登入狀態
 onAuthStateChanged(auth, user => {
