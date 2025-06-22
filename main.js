@@ -297,26 +297,6 @@ function setupPresence(user) {
     last_changed: dbServerTimestamp()
   };
 
-  // 立即設置在線狀態並重試
-  const setOnlineWithRetry = async (retries = 3, delay = 1000) => {
-    for (let i = 0; i < retries; i++) {
-      try {
-        await set(userRef, onlineObj);
-        console.log('設置在線狀態成功：', user.uid, onlineObj);
-        return;
-      } catch (error) {
-        console.error(`設置在線狀態失敗（第 ${i + 1} 次）：`, user.uid, error.message);
-        if (i < retries - 1) {
-          await new Promise(resolve => setTimeout(resolve, delay));
-        }
-      }
-    }
-    console.error('設置在線狀態最終失敗：', user.uid);
-  };
-
-  setOnlineWithRetry();
-
-  // 監聽連線狀態
   onValue(connRef, snap => {
     console.log('Connection status:', snap.val());
     if (snap.val() === false) {
@@ -324,8 +304,10 @@ function setupPresence(user) {
       return;
     }
     onDisconnect(userRef).set(offlineObj).then(() => {
-      set(userRef, onlineObj).catch(error => {
-        console.error('更新在線狀態失敗：', user.uid, error.message);
+      set(userRef, onlineObj).then(() => {
+        console.log('設置在線狀態成功：', user.uid, onlineObj);
+      }).catch(error => {
+        console.error('設置在線狀態失敗：', user.uid, error.message);
       });
     }).catch(error => {
       console.error('設置斷線處理失敗：', user.uid, error.message);
