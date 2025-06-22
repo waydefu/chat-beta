@@ -119,7 +119,8 @@ h1, h2 {
   border: 1px solid #ddd;
   border-radius: 8px;
   padding: 10px;
-  height: 300px;
+  height: 60vh; /* 改成視窗高度 60% */
+  max-height: 70vh; /* 上限 */
   overflow-y: auto;
   scroll-behavior: smooth;
   display: flex;
@@ -127,6 +128,7 @@ h1, h2 {
   gap: 8px;
   color: #333;
 }
+
 
 /* 訊息列容器 */
 .message-row {
@@ -226,8 +228,9 @@ h1, h2 {
 /* 手機響應式 */
 @media (max-width: 600px) {
   #chat-box {
-    height: 250px;
+    height: 50vh;
   }
+}
   .message {
     max-width: 90%;
   }
