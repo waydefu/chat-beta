@@ -20,12 +20,11 @@ import {
   serverTimestamp as dbServerTimestamp
 } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
 
-// 🔧 DOM 元素綁定
 const loginBtn = document.getElementById("login-btn");
 const logoutBtn = document.getElementById("logout-btn");
 const userInfo = document.getElementById("user-info");
 const chatSection = document.getElementById("chat-section");
-const loginCard = document.querySelector(".login-wrapper"); // 登入卡片為 .login-wrapper
+const loginCard = document.getElementById("login-card");
 const chatBox = document.getElementById("chat-box");
 const messageInput = document.getElementById("message-input");
 const sendBtn = document.getElementById("send-btn");
@@ -36,67 +35,40 @@ const presenceList = document.getElementById("presence-list");
 let currentRoom = "";
 let unsubscribe = null;
 
-// 🔐 登入事件
-loginBtn.onclick = async () => {
-  try {
-    await signInWithPopup(auth, provider);
-    console.log("✅ 登入成功");
-  } catch (err) {
-    console.error("❌ 登入失敗:", err.message || err);
-    alert("登入失敗！請檢查網域授權與 Firebase 設定。");
-  }
-};
+// 登入按鈕事件
+loginBtn.onclick = () => signInWithPopup(auth, provider);
 
-// 🔓 登出事件
-logoutBtn.onclick = async () => {
-  try {
-    await signOut(auth);
-    console.log("👋 已登出");
-  } catch (err) {
-    console.error("❌ 登出失敗:", err.message || err);
-    alert("登出失敗！");
-  }
-};
+// 登出按鈕事件
+logoutBtn.onclick = () => signOut(auth);
 
-
-// 👤 監聽登入狀態
+// 監聽登入狀態變化
 onAuthStateChanged(auth, user => {
   if (user) {
     userInfo.textContent = `👋 ${user.displayName}`;
-    loginCard.style.display = "none";
-    chatSection.style.display = "flex";
-    logoutBtn.style.display = "inline-block";
-    loginBtn.style.display = "none";
-
+    loginCard.style.display = "none";       // 隱藏登入卡片
+    chatSection.style.display = "flex";     // 顯示聊天室區塊
+    logoutBtn.style.display = "inline-block"; // 顯示登出按鈕
+    loginBtn.style.display = "none";        // 隱藏登入按鈕（防止多餘）
     setupPresence(user);
     watchPresence();
-
-    // 自動加入上次聊天室（可選）
-    const lastRoom = localStorage.getItem("lastRoom");
-    if (lastRoom) {
-      roomInput.value = lastRoom;
-      joinRoomBtn.click();
-    }
   } else {
     userInfo.textContent = "";
-    loginCard.style.display = "block";
-    chatSection.style.display = "none";
-    logoutBtn.style.display = "none";
-    loginBtn.style.display = "inline-block";
+    loginCard.style.display = "block";      // 顯示登入卡片
+    chatSection.style.display = "none";     // 隱藏聊天室區塊
+    logoutBtn.style.display = "none";       // 隱藏登出按鈕
+    loginBtn.style.display = "inline-block";// 顯示登入按鈕
     presenceList.innerHTML = `<h3>🟢 在線使用者</h3>`;
     chatBox.innerHTML = "";
     if (unsubscribe) unsubscribe();
   }
 });
 
-// 💬 加入聊天室
+// 加入／建立聊天室
 joinRoomBtn.onclick = () => {
   const room = roomInput.value.trim();
   if (!room) return alert("請輸入聊天室名稱");
 
   currentRoom = room;
-  localStorage.setItem("lastRoom", room);
-
   if (unsubscribe) unsubscribe();
 
   const msgsRef = collection(firestore, "rooms", currentRoom, "messages");
@@ -108,10 +80,7 @@ joinRoomBtn.onclick = () => {
 
     snap.forEach(doc => {
       const msg = doc.data();
-      const time = msg.timestamp?.toDate().toLocaleTimeString([], {
-        hour: '2-digit',
-        minute: '2-digit'
-      }) || "";
+      const time = msg.timestamp?.toDate().toLocaleTimeString() || "";
       const side = msg.uid === uid ? "you" : "other";
 
       const row = document.createElement("div");
@@ -139,11 +108,12 @@ joinRoomBtn.onclick = () => {
       chatBox.appendChild(row);
     });
 
+    // 自動滾到底部
     chatBox.scrollTop = chatBox.scrollHeight;
   });
 };
 
-// ✉️ 發送訊息
+// 發送訊息
 sendBtn.onclick = async () => {
   const text = messageInput.value.trim();
   const user = auth.currentUser;
@@ -159,12 +129,7 @@ sendBtn.onclick = async () => {
   messageInput.value = "";
 };
 
-// ⏎ 支援 Enter 鍵發送
-messageInput.addEventListener("keydown", e => {
-  if (e.key === "Enter") sendBtn.click();
-});
-
-// 👥 在線狀態
+// 在線狀態管理
 function setupPresence(user) {
   const userRef = ref(rtdb, "presence/" + user.uid);
   const connRef = ref(rtdb, ".info/connected");
