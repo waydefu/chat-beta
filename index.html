@@ -31,9 +31,13 @@
       <div class="chat-container">
         <div id="chat-box" class="chat-box" role="log" aria-live="polite"></div>
         <div class="message-input-wrapper">
-          <div class="message-input-indicator"><p id="typing-indicator"></p></div>
-          <textarea id="message-input" placeholder="輸入訊息..." maxlength="500" aria-label="輸入聊天訊息"></textarea>
-          <button id="send-btn" aria-label="送出訊息">送出</button>
+          <div class="message-input-indicator">
+            <p id="typing-indicator"></p>
+          </div>
+          <div class="message-input-container">
+            <textarea id="message-input" placeholder="輸入訊息..." maxlength="500" aria-label="輸入聊天訊息"></textarea>
+            <button id="send-btn" aria-label="送出訊息">送出</button>
+          </div>
         </div>
         <div id="presence-list" class="presence-list">
           <h3>🟢 在線使用者</h3>

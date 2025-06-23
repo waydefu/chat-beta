@@ -15,7 +15,6 @@ body {
   align-items: flex-start;
   min-height: 100vh;
 }
-/* 其他樣式保持不變 */
 
 /* 置中標題 */
 h1, h2 {
@@ -280,7 +279,7 @@ h1, h2 {
   color: #1e40af;
   background: #f0f9ff;
   padding: 8px 14px;
-  margin: 0 0 8px 0;
+  margin: 0 0 8px 0; /* 與輸入框間距 */
   border-radius: 12px;
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.1);
   max-width: fit-content;
@@ -289,11 +288,18 @@ h1, h2 {
 
 /* 輸入框和送出按鈕包裝器 */
 .message-input-wrapper {
+  display: block; /* 保持塊級佈局 */
+  width: 100%;
+  max-width: 800px;
+  margin: 10px 0; /* 與其他元素間距 */
+}
+
+/* 輸入框和送出按鈕容器 */
+.message-input-container {
   display: flex;
   align-items: stretch;
   gap: 10px;
   width: 100%;
-  max-width: 800px;
 }
 
 #message-input {
@@ -309,12 +315,24 @@ h1, h2 {
   overflow-y: auto;
   box-sizing: border-box;
   box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.05);
+  width: 100%; /* 確保填充容器 */
 }
 
 #message-input:focus {
   border-color: #011849;
   outline: none;
   box-shadow: 0 0 8px rgba(1, 24, 73, 0.2);
+}
+
+#send-btn {
+  padding: 14px 20px;
+  border: none;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #011749, #021548);
+  color: white;
+  cursor: pointer;
+  font-size: 1rem;
+  width: auto; /* 自動調整寬度 */
 }
 
 /* 聊天室名稱與下拉選單 */
@@ -365,15 +383,20 @@ h1, h2 {
   }
 
   .message-input-wrapper {
+    display: block; /* 保持塊級 */
+    width: 100%;
+  }
+
+  .message-input-container {
     flex-direction: column;
     align-items: stretch;
     gap: 6px;
-    max-width: 100%;
   }
 
   #message-input {
     min-height: 48px;
     font-size: 1rem;
+    width: 100%; /* 填充容器 */
   }
 
   #send-btn {
@@ -386,5 +409,6 @@ h1, h2 {
   #typing-indicator {
     max-width: 100%;
     width: 100%;
+    margin: 0 0 6px 0; /* 調整間距 */
   }
 }

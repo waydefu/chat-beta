@@ -40,6 +40,7 @@ const roomInput = document.getElementById('room-name');
 const joinRoomBtn = document.getElementById('join-room');
 const presenceList = document.getElementById('presence-list');
 const roomList = document.getElementById('room-list');
+const typingIndicator = document.getElementById('typing-indicator'); // 直接引用現有元素
 
 // === 狀態 ===
 let currentRoom = '';
@@ -86,7 +87,6 @@ async function appendMessage(msg, uid) {
 
   const side = msg.uid === uid ? 'you' : 'other';
 
-  // 獲取已讀者名稱
   let readByText = '';
   if (msg.readBy && msg.readBy.length > 0) {
     const readByNames = await Promise.all(msg.readBy.map(getUserDisplayName));
@@ -161,7 +161,6 @@ onAuthStateChanged(auth, user => {
     loginBtn.style.display = 'none';
     chatBox.setAttribute('role', 'log');
     chatBox.setAttribute('aria-live', 'polite');
-    // 儲存使用者顯示名稱
     setDoc(doc(firestore, 'users', user.uid), {
       displayName: user.displayName || '匿名使用者'
     }, { merge: true }).catch(error => {
@@ -170,6 +169,7 @@ onAuthStateChanged(auth, user => {
     setupPresence(user);
     watchPresence();
     watchRoomList();
+    watchTyping(); // 啟動 typing 監聽
   } else {
     userInfo.textContent = '';
     loginCard.style.display = 'block';
@@ -179,6 +179,7 @@ onAuthStateChanged(auth, user => {
     presenceList.innerHTML = `<h3>🟢 在線使用者</h3>`;
     chatBox.innerHTML = '';
     roomList.innerHTML = '<option disabled selected>選擇聊天室</option>';
+    if (typingIndicator) typingIndicator.textContent = ''; // 清除 typing 提示
     if (unsubscribe) unsubscribe();
     userNameCache.clear();
   }
@@ -219,7 +220,7 @@ joinRoomBtn.onclick = async () => {
       alert('無法載入訊息，請稍後重試');
     });
 
-    watchTyping();
+    watchTyping(); // 啟動或更新 typing 監聽
   } catch (error) {
     console.error('加入聊天室失敗：', error);
     alert(`加入聊天室失敗：${error.message}`);
@@ -273,7 +274,6 @@ sendBtn.onclick = async () => {
   }
 };
 
-// 支援 Enter 鍵發送
 messageInput.addEventListener('keypress', e => {
   if (e.key === 'Enter' && !e.shiftKey) {
     e.preventDefault();
@@ -343,21 +343,28 @@ function watchPresence() {
 }
 
 // === 正在輸入提示 ===
-const typingNotice = document.createElement('div');
-typingNotice.id = 'typing-indicator';
-chatBox.parentElement.appendChild(typingNotice);
-
 function watchTyping() {
+  if (!currentRoom) return;
   const typingRef = ref(rtdb, `typing/${currentRoom}`);
   onValue(typingRef, snap => {
-    const data = snap.val() || {};
-    const othersTyping = Object.values(data)
-      .filter(u => u && u.name !== auth.currentUser?.displayName)
-      .map(u => u.name);
+    try {
+      const data = snap.val() || {};
+      const othersTyping = Object.values(data)
+        .filter(u => u && u.name !== auth.currentUser?.displayName)
+        .map(u => u.name);
 
-    typingNotice.textContent = othersTyping.length
-      ? `${othersTyping.join('、')} 正在輸入...`
-      : '';
+      if (typingIndicator) {
+        typingIndicator.textContent = othersTyping.length
+          ? `${othersTyping.join('、')} 正在輸入...`
+          : '';
+      }
+    } catch (error) {
+      console.error('處理 typing 數據失敗：', error.message);
+      if (typingIndicator) typingIndicator.textContent = '無法載入輸入狀態';
+    }
+  }, error => {
+    console.error('監聽 typing 失敗：', error.message);
+    if (typingIndicator) typingIndicator.textContent = '無法載入輸入狀態';
   });
 }
 
@@ -367,15 +374,20 @@ messageInput.addEventListener('input', () => {
   if (!user || !currentRoom) return;
 
   const typingRef = ref(rtdb, `typing/${currentRoom}/${user.uid}`);
-  set(typingRef, { name: user.displayName });
-
   clearTimeout(typingTimeout);
+
+  if (!typingTimeout) {
+    set(typingRef, { name: user.displayName })
+      .catch(error => console.error('設置 typing 失敗：', error.message));
+  }
   typingTimeout = setTimeout(() => {
-    set(typingRef, null);
+    set(typingRef, null)
+      .catch(error => console.error('清除 typing 失敗：', error.message));
+    typingTimeout = null;
   }, 2000);
 });
 
-// === 輸入框動態高度 ===
+// === 動態調整輸入框高度 ===
 messageInput.addEventListener('input', () => {
   messageInput.style.height = 'auto';
   messageInput.style.height = `${messageInput.scrollHeight}px`;
