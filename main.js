@@ -81,7 +81,7 @@ async function appendMessage(msg, uid) {
       // 如果 timestamp 存在但其 .toDate() 方法不存在，
       // 這表示它是 serverTimestamp() 的本地佔位符。
       // 在這種情況下，使用當前瀏覽器時間作為近似顯示。
-      console.warn('收到非 Timestamp 的 timestamp 佔位符，使用本地時間:', msg.id, msg.timestamp);
+      console.warn('收到非 Timestamp 的 timestamp 佔位符，使用本地時間作為備用:', msg.id, msg.timestamp);
       time = new Date().toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' });
     } else {
       // timestamp 不存在的情況
@@ -110,7 +110,7 @@ async function appendMessage(msg, uid) {
 
   const bubble = document.createElement('div');
   bubble.className = `message ${side}`;
-  bubble.setAttribute('aria-label', `${msg.user} 說：${msg.text}，時間：${time}`);
+  bubble.setAttribute('aria-label', `${msg.user} 說：${sanitizeInput(msg.text)}，時間：${time}`); // 確保文本也 sanitized
   bubble.innerHTML = `
     <span class="message-text">${sanitizeInput(msg.text)}</span>
     <span class="message-time">${time}</span>
@@ -199,44 +199,74 @@ joinRoomBtn.onclick = async () => {
     const room = roomInput.value.trim();
     if (!room) return alert('請輸入聊天室名稱');
 
+    console.log(`嘗試加入/建立聊天室: ${room}`);
     joinRoomBtn.disabled = true;
     joinRoomBtn.textContent = '載入中...';
 
+    // 儲存新的聊天室名稱到狀態變數
     currentRoom = room;
-    if (unsubscribe) unsubscribe();
 
+    // 如果之前有監聽器，先取消訂閱
+    if (unsubscribe) {
+      unsubscribe();
+      console.log('已取消之前的訊息監聽。');
+    }
+
+    // 確保房間文檔存在 (如果不存在則創建，如果存在則合併)
     await setDoc(doc(firestore, 'rooms', room), {
       createdAt: serverTimestamp()
     }, { merge: true });
+    console.log(`聊天室文檔 '${room}' 已確保存在。`);
 
+
+    // 設置 Firestore 訊息監聽器
     const msgsRef = collection(firestore, 'rooms', currentRoom, 'messages');
     const q = query(msgsRef, orderBy('timestamp'));
 
     unsubscribe = onSnapshot(q, snap => {
       const uid = auth.currentUser?.uid;
+      if (!uid) {
+        console.warn('用戶未登入，無法處理訊息快照。');
+        return;
+      }
+
       snap.docChanges().forEach(async change => {
         if (change.type === 'added') {
           const msg = { id: change.doc.id, ...change.doc.data() };
+          console.log('--- 收到新訊息快照 (added) ---');
+          console.log('訊息 ID:', msg.id);
+          console.log('完整訊息數據:', msg);
+          console.log('時間戳欄位:', msg.timestamp);
+          console.log('時間戳是否有 toDate 方法:', typeof msg.timestamp?.toDate);
+          console.log('--- 快照處理結束 ---');
+
           await appendMessage(msg, uid);
-          if (!msg.readBy?.includes(uid)) {
+          // 確保訊息被閱讀 (除了發送者自己，其他人才需要標記已讀)
+          if (msg.uid !== uid && !msg.readBy?.includes(uid)) { // 修改條件：如果是別人發的且我還沒讀
             await markMessageAsRead(msg.id, uid);
           }
         }
+        // 可以選擇處理 'modified' 和 'removed' 類型，但目前主要處理 'added'
       });
     }, error => {
       console.error('監聽訊息失敗：', error);
       alert('無法載入訊息，請稍後重試');
     });
+    console.log(`已設定聊天室 '${currentRoom}' 的訊息監聽。`);
 
     watchTyping(); // 啟動或更新 typing 監聽
+    console.log('已啟動打字狀態監聽。');
+
   } catch (error) {
-    console.error('加入聊天室失敗：', error);
+    console.error('加入聊天室失敗：', error.message, error.code, '詳細錯誤對象:', error);
     alert(`加入聊天室失敗：${error.message}`);
   } finally {
     joinRoomBtn.disabled = false;
     joinRoomBtn.textContent = '加入 / 建立聊天室';
+    console.log('加入聊天室操作結束。');
   }
 };
+
 
 // 即時監聽聊天室清單
 function watchRoomList() {
@@ -257,30 +287,59 @@ function watchRoomList() {
 
 roomList.onchange = () => {
   roomInput.value = roomList.value;
+  // 自動觸發加入房間
+  joinRoomBtn.click();
 };
 
 // === 訊息發送 ===
 sendBtn.onclick = async () => {
+  console.log('--- 嘗試發送訊息 ---');
   try {
     const text = messageInput.value.trim();
     const user = auth.currentUser;
-    if (!text || !user || !currentRoom) return;
 
-    const messageRef = await addDoc(collection(firestore, 'rooms', currentRoom, 'messages'), {
+    console.log('訊息內容:', text ? text.substring(0, 20) + '...' : '[空]');
+    console.log('當前用戶:', user ? user.displayName : '[未登入]');
+    console.log('當前聊天室:', currentRoom || '[未選擇]');
+
+    if (!text) {
+      console.warn('發送失敗：訊息內容為空。');
+      return;
+    }
+    if (!user) {
+      console.warn('發送失敗：用戶未登入。');
+      alert('請先登入才能發送訊息！');
+      return;
+    }
+    if (!currentRoom) {
+      console.warn('發送失敗：未加入任何聊天室。');
+      alert('請先加入或建立一個聊天室！');
+      return;
+    }
+
+    const messageData = {
       user: user.displayName,
       uid: user.uid,
-      text,
-      timestamp: serverTimestamp(),
-      readBy: [user.uid]
-    });
+      text: text,
+      timestamp: serverTimestamp(), // Firestore 的伺服器時間戳
+      readBy: [user.uid] // 訊息發送者自己默認為已讀
+    };
+    console.log('準備發送的訊息數據:', messageData);
 
-    console.log('訊息已發送，ID：', messageRef.id);
-    messageInput.value = '';
+    const messageRef = await addDoc(collection(firestore, 'rooms', currentRoom, 'messages'), messageData);
+
+    console.log('訊息已成功發送到 Firestore，ID：', messageRef.id);
+    messageInput.value = ''; // 清空輸入框
+    messageInput.style.height = 'auto'; // 重置輸入框高度
+
   } catch (error) {
-    console.error('發送訊息失敗：', error.message, error.code);
-    alert('無法發送訊息，請稍後重試');
+    console.error('發送訊息失敗：', error.message, error.code, '詳細錯誤對象:', error);
+    alert(`無法發送訊息，請稍後重試：${error.message}`);
+  } finally {
+    console.log('--- 訊息發送嘗試結束 ---');
   }
 };
+
 
 messageInput.addEventListener('keypress', e => {
   if (e.key === 'Enter' && !e.shiftKey) {
@@ -309,9 +368,12 @@ function setupPresence(user) {
     console.log('Connection status:', snap.val());
     if (snap.val() === false) {
       console.log('Disconnected:', user.uid);
+      // 如果不是顯式斷開，Firebase 會自動處理離線
       return;
     }
+    // 設置 onDisconnect 處理器，確保瀏覽器關閉時狀態設為離線
     onDisconnect(userRef).set(offlineObj).then(() => {
+      // 一旦設置了 onDisconnect，就設置當前狀態為在線
       set(userRef, onlineObj).then(() => {
         console.log('設置在線狀態成功：', user.uid, onlineObj);
       }).catch(error => {
@@ -329,20 +391,20 @@ function watchPresence() {
   const allRef = ref(rtdb, 'presence');
   onValue(allRef, snap => {
     const users = snap.val() || {};
-    console.log('Presence data:', users);
+    // console.log('Presence data:', users); // 避免頻繁日誌
     presenceList.innerHTML = `<h3>🟢 在線使用者</h3>`;
-    if (Object.keys(users).length === 0) {
+    const onlineUsers = Object.values(users).filter(u => u?.state === 'online');
+
+    if (onlineUsers.length === 0) {
       const div = document.createElement('div');
       div.textContent = '無在線使用者';
       presenceList.appendChild(div);
     } else {
-      for (const uid in users) {
-        if (users[uid]?.state === 'online') {
-          const div = document.createElement('div');
-          div.textContent = users[uid].displayName || uid;
-          presenceList.appendChild(div);
-        }
-      }
+      onlineUsers.forEach(u => {
+        const div = document.createElement('div');
+        div.textContent = u.displayName || '匿名使用者';
+        presenceList.appendChild(div);
+      });
     }
   }, error => {
     console.error('監聽在線使用者失敗：', error.message, error.code);
@@ -357,8 +419,9 @@ function watchTyping() {
   onValue(typingRef, snap => {
     try {
       const data = snap.val() || {};
+      const currentUserDisplayName = auth.currentUser?.displayName;
       const othersTyping = Object.values(data)
-        .filter(u => u && u.name !== auth.currentUser?.displayName)
+        .filter(u => u && u.name !== currentUserDisplayName) // 過濾掉自己
         .map(u => u.name);
 
       if (typingIndicator) {
