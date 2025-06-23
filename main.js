@@ -117,6 +117,8 @@ async function appendMessage(msg, uid) {
   
   const row = document.createElement('div');
   row.className = `message-row ${side}`;
+  // 為 message-row 添加 data-msg-id 屬性，以便在 modified 時查找
+  row.setAttribute('data-msg-id', msg.id);
 
   const avatarText = document.createElement('div');
   avatarText.className = 'avatar-text';
@@ -126,13 +128,13 @@ async function appendMessage(msg, uid) {
   bubble.className = `message ${side}`;
   // 確保 aria-label 中的文本也進行了 sanitized
   bubble.setAttribute('aria-label', `${msg.user} 說：${sanitizeInput(msg.text)}，時間：${time}`);
+  // 為 message 添加 data-msg-id 屬性，以便在 modified 時查找
+  bubble.setAttribute('data-msg-id', msg.id); 
   bubble.innerHTML = `
     <span class="message-text">${sanitizeInput(msg.text)}</span>
     <span class="message-time">${time}</span>
     <span class="read-status" data-msg-id="${msg.id}" title="${readByText}">${isReadByMe ? '✔' : ''}</span>
   `;
-  // 注意：'✔' 符號只在 side === 'you' 的時候才需要顯示給發送者看
-  // 但為了統一邏輯，這裡先讓它顯示，如果不是自己的訊息，顯示也無妨，因為 title 會解釋
 
   if (side === 'you') {
     row.appendChild(bubble);
@@ -251,19 +253,20 @@ joinRoomBtn.onclick = async () => {
       }
 
       snap.docChanges().forEach(async change => {
+        const msg = { id: change.doc.id, ...change.doc.data() };
+
         if (change.type === 'added') {
-          const msg = { id: change.doc.id, ...change.doc.data() };
           console.log('--- 收到新訊息快照 (added) ---');
           console.log('訊息 ID:', msg.id);
           console.log('完整訊息數據 (原始):', msg); // 顯示原始數據
           console.log('訊息 UID:', msg.uid, '當前用戶 UID:', uid);
-          console.log('訊息 readBy 陣列:', msg.readBy); // 顯示 readBy 陣列內容
+          console.log('訊息 readBy 陣列 (added):', msg.readBy); // 顯示 readBy 陣列內容 (added 事件時)
           console.log('時間戳欄位:', msg.timestamp);
           console.log('時間戳是否有 toDate 方法:', typeof msg.timestamp?.toDate);
           
           await appendMessage(msg, uid);
 
-          // 判斷是否需要標記為已讀
+          // 判斷是否需要標記為已讀 (針對非自己發送的訊息)
           // 條件：訊息不是當前用戶發送的 (msg.uid !== uid) 且 當前用戶不在 readBy 陣列中
           if (msg.uid !== uid && (!msg.readBy || !msg.readBy.includes(uid))) {
             console.log(`判斷需要標記訊息 ${msg.id} 為 UID ${uid} 已讀...`);
@@ -272,11 +275,31 @@ joinRoomBtn.onclick = async () => {
             console.log(`訊息 ${msg.id} 不需要標記為 UID ${uid} 已讀。`);
             console.log(`原因: 訊息是否為本人發送: ${msg.uid === uid}, 是否已包含在 readBy: ${msg.readBy?.includes(uid)}`);
           }
-          console.log('--- 快照處理結束 ---');
+          console.log('--- added 快照處理結束 ---');
+
+        } else if (change.type === 'modified') {
+            // 當訊息被修改時 (例如，readBy 陣列被更新)
+            console.log('--- 收到訊息更新快照 (modified) ---');
+            console.log('訊息 ID:', msg.id);
+            console.log('更新後的完整訊息數據:', msg);
+            console.log('更新後的 readBy 陣列 (modified):', msg.readBy); // 顯示 readBy 陣列內容 (modified 事件時)
+
+            // 查找 DOM 中現有的訊息元素並更新其已讀狀態
+            // 我們查找 `message-row`，因為它是完整的訊息容器
+            const existingMessageRow = chatBox.querySelector(`.message-row[data-msg-id="${msg.id}"]`);
+            if (existingMessageRow) {
+                // 移除舊的訊息行元素
+                existingMessageRow.remove();
+                // 重新呼叫 appendMessage，將新的數據渲染到 chatBox 中
+                // 這是最簡單也最穩妥的更新方式，確保所有狀態都是最新的
+                console.log(`重新渲染訊息 ${msg.id} 以更新已讀狀態。`);
+                await appendMessage(msg, uid);
+            } else {
+                console.warn(`未找到 ID 為 ${msg.id} 的現有訊息元素，無法更新已讀狀態。`);
+            }
+            console.log('--- modified 快照處理結束 ---');
         }
-        // 如果您希望已讀狀態的更新能即時反映，您可能還需要處理 change.type === 'modified'
-        // 但這會涉及到更複雜的 UI 更新邏輯 (例如，找到已存在的訊息元素並更新其已讀標記)
-        // 目前我們先確保 'added' 類型下的標記和顯示正常。
+        // 如果訊息可以被刪除，您可能還需要處理 'removed' 類型
       });
     }, error => {
       console.error('監聽訊息失敗：', error);
