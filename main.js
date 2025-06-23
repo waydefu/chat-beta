@@ -75,9 +75,17 @@ async function appendMessage(msg, uid) {
   let time = '';
   try {
     if (msg.timestamp && typeof msg.timestamp.toDate === 'function') {
+      // 如果是 Firebase Timestamp 物件，正常轉換
       time = msg.timestamp.toDate().toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' });
+    } else if (msg.timestamp) {
+      // 如果 timestamp 存在但其 .toDate() 方法不存在，
+      // 這表示它是 serverTimestamp() 的本地佔位符。
+      // 在這種情況下，使用當前瀏覽器時間作為近似顯示。
+      console.warn('收到非 Timestamp 的 timestamp 佔位符，使用本地時間:', msg.id, msg.timestamp);
+      time = new Date().toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' });
     } else {
-      console.warn('無效的時間戳：', msg.id, msg.timestamp);
+      // timestamp 不存在的情況
+      console.warn('訊息沒有時間戳:', msg.id);
       time = '未知時間';
     }
   } catch (error) {
@@ -376,11 +384,12 @@ messageInput.addEventListener('input', () => {
   const typingRef = ref(rtdb, `typing/${currentRoom}/${user.uid}`);
   clearTimeout(typingTimeout);
 
-  if (!typingTimeout) {
+  if (!typingTimeout) { // 僅在第一次打字時設置狀態
     set(typingRef, { name: user.displayName })
       .catch(error => console.error('設置 typing 失敗：', error.message));
   }
   typingTimeout = setTimeout(() => {
+    // 2 秒後清除打字狀態
     set(typingRef, null)
       .catch(error => console.error('清除 typing 失敗：', error.message));
     typingTimeout = null;
