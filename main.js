@@ -75,24 +75,23 @@ async function appendMessage(msg, uid) {
   let time = '';
   let timestampDate;
 
-  // 嘗試從 Firebase Timestamp 或 Date 物件獲取日期
-  // 更加寬容地處理 timestamp
   try {
-    if (msg.timestamp instanceof Date) { // 如果已經是 JS Date 對象 (例如從本地快照手動處理)
+    if (msg.timestamp instanceof Date) { // 如果已經是 JS Date 物件 (例如從本地快照手動處理)
       timestampDate = msg.timestamp;
     } else if (msg.timestamp && typeof msg.timestamp.toDate === 'function') {
       // 這是 Firebase Timestamp 物件的標準處理方式
       timestampDate = msg.timestamp.toDate();
-    } else if (msg.timestamp) {
-      // 如果 timestamp 存在，但不是 Date 也不是帶 toDate() 的 Firebase Timestamp
-      // 這通常是 serverTimestamp() 的本地佔位符
-      // 為了立即顯示，我們回退到當前本地時間
-      console.warn('收到非 Firebase Timestamp 物件的時間戳佔位符，使用當前本地時間作為備用。訊息ID:', msg.id, '原始值:', msg.timestamp);
-      timestampDate = new Date(); // 當前瀏覽器的本地時間
     } else {
-      // 如果 timestamp 欄位完全不存在，這是數據問題
-      console.warn('訊息中缺少時間戳欄位。訊息ID:', msg.id);
-      timestampDate = new Date(); // 仍然使用當前時間作為最安全的 fallback
+      // 如果 msg.timestamp 為 null、undefined，或是一個沒有 toDate() 方法的物件
+      // (例如 serverTimestamp() 的本地待處理狀態，或者 Firestore 數據中 timestamp 欄位缺失)
+      // 對於您自己發送的訊息，如果 timestamp 仍有問題，我們使用客戶端的當前時間來即時顯示。
+      if (msg.uid === uid) { // 這是您的訊息
+          console.warn('您的訊息時間戳異常，使用本地時間作為回退。訊息ID:', msg.id, '原始值:', msg.timestamp);
+          timestampDate = new Date(); // 使用當前瀏覽器的本地時間來即時顯示
+      } else { // 這是其他人的訊息，如果時間戳缺失或異常，可能是數據問題。
+          console.warn('對方訊息時間戳缺失或異常，使用本地時間作為回退。訊息ID:', msg.id, '原始值:', msg.timestamp);
+          timestampDate = new Date(); // 仍然使用當前時間作為最安全的備用
+      }
     }
 
     // 格式化時間
@@ -106,11 +105,16 @@ async function appendMessage(msg, uid) {
   const side = msg.uid === uid ? 'you' : 'other';
 
   let readByText = '';
-  if (msg.readBy && msg.readBy.length > 0) {
+  let isReadByMe = false; // 新增變數判斷是否被當前用戶讀取
+
+  if (msg.readBy && Array.isArray(msg.readBy) && msg.readBy.length > 0) {
     const readByNames = await Promise.all(msg.readBy.map(getUserDisplayName));
     readByText = `已讀：${readByNames.join('、')}`;
+    isReadByMe = msg.readBy.includes(uid); // 判斷是否包含當前用戶 UID
+  } else {
+      readByText = '無人已讀'; // 如果 readBy 不存在或為空陣列
   }
-
+  
   const row = document.createElement('div');
   row.className = `message-row ${side}`;
 
@@ -125,8 +129,10 @@ async function appendMessage(msg, uid) {
   bubble.innerHTML = `
     <span class="message-text">${sanitizeInput(msg.text)}</span>
     <span class="message-time">${time}</span>
-    <span class="read-status" data-msg-id="${msg.id}" title="${readByText}">${msg.readBy?.includes(uid) ? '✔' : ''}</span>
+    <span class="read-status" data-msg-id="${msg.id}" title="${readByText}">${isReadByMe ? '✔' : ''}</span>
   `;
+  // 注意：'✔' 符號只在 side === 'you' 的時候才需要顯示給發送者看
+  // 但為了統一邏輯，這裡先讓它顯示，如果不是自己的訊息，顯示也無妨，因為 title 會解釋
 
   if (side === 'you') {
     row.appendChild(bubble);
@@ -140,15 +146,18 @@ async function appendMessage(msg, uid) {
   chatBox.scrollTop = chatBox.scrollHeight;
 }
 
-// 標記訊息為已讀
+// 標記訊息為已讀 (增加日誌)
 async function markMessageAsRead(msgId, uid) {
+  console.log(`嘗試標記訊息 ${msgId} 為 UID ${uid} 已讀...`);
   try {
     const msgRef = doc(firestore, 'rooms', currentRoom, 'messages', msgId);
     await updateDoc(msgRef, {
       readBy: arrayUnion(uid)
     });
+    console.log(`訊息 ${msgId} 已成功標記為 UID ${uid} 已讀。`);
   } catch (error) {
-    console.error('標記已讀失敗：', error.message);
+    console.error(`標記訊息 ${msgId} 為 UID ${uid} 已讀失敗：`, error.message, error.code, error);
+    // alert('無法標記訊息為已讀，請檢查權限或網路'); // 這裡可以選擇是否彈出警告
   }
 }
 
@@ -246,22 +255,28 @@ joinRoomBtn.onclick = async () => {
           const msg = { id: change.doc.id, ...change.doc.data() };
           console.log('--- 收到新訊息快照 (added) ---');
           console.log('訊息 ID:', msg.id);
-          console.log('完整訊息數據:', msg);
+          console.log('完整訊息數據 (原始):', msg); // 顯示原始數據
+          console.log('訊息 UID:', msg.uid, '當前用戶 UID:', uid);
+          console.log('訊息 readBy 陣列:', msg.readBy); // 顯示 readBy 陣列內容
           console.log('時間戳欄位:', msg.timestamp);
           console.log('時間戳是否有 toDate 方法:', typeof msg.timestamp?.toDate);
-          console.log('--- 快照處理結束 ---');
-
-          // 直接調用 appendMessage，讓其內部邏輯處理時間戳
+          
           await appendMessage(msg, uid);
 
-          // 確保訊息被閱讀 (除了發送者自己，其他人才需要標記已讀)
-          if (msg.uid !== uid && !msg.readBy?.includes(uid)) { // 修改條件：如果是別人發的且我還沒讀
+          // 判斷是否需要標記為已讀
+          // 條件：訊息不是當前用戶發送的 (msg.uid !== uid) 且 當前用戶不在 readBy 陣列中
+          if (msg.uid !== uid && (!msg.readBy || !msg.readBy.includes(uid))) {
+            console.log(`判斷需要標記訊息 ${msg.id} 為 UID ${uid} 已讀...`);
             await markMessageAsRead(msg.id, uid);
+          } else {
+            console.log(`訊息 ${msg.id} 不需要標記為 UID ${uid} 已讀。`);
+            console.log(`原因: 訊息是否為本人發送: ${msg.uid === uid}, 是否已包含在 readBy: ${msg.readBy?.includes(uid)}`);
           }
+          console.log('--- 快照處理結束 ---');
         }
-        // 可以選擇處理 'modified' 和 'removed' 類型，但目前主要處理 'added'
-        // 'modified' 通常用於處理 serverTimestamp() 從佔位符變為真實時間戳的情況，
-        // 但目前 appendMessage 已經能處理佔位符，且 UI 上更新複雜，暫不處理
+        // 如果您希望已讀狀態的更新能即時反映，您可能還需要處理 change.type === 'modified'
+        // 但這會涉及到更複雜的 UI 更新邏輯 (例如，找到已存在的訊息元素並更新其已讀標記)
+        // 目前我們先確保 'added' 類型下的標記和顯示正常。
       });
     }, error => {
       console.error('監聽訊息失敗：', error);
@@ -380,9 +395,9 @@ function setupPresence(user) {
   };
 
   onValue(connRef, snap => {
-    console.log('Connection status:', snap.val());
+    console.log('連線狀態:', snap.val());
     if (snap.val() === false) {
-      console.log('Disconnected:', user.uid);
+      console.log('已斷線:', user.uid);
       // 如果不是顯式斷開，Firebase 會自動處理離線
       return;
     }
@@ -406,7 +421,7 @@ function watchPresence() {
   const allRef = ref(rtdb, 'presence');
   onValue(allRef, snap => {
     const users = snap.val() || {};
-    // console.log('Presence data:', users); // 避免頻繁日誌
+    // console.log('在線數據:', users); // 避免頻繁日誌
     presenceList.innerHTML = `<h3>🟢 在線使用者</h3>`;
     const onlineUsers = Object.values(users).filter(u => u?.state === 'online');
 
@@ -445,11 +460,11 @@ function watchTyping() {
           : '';
       }
     } catch (error) {
-      console.error('處理 typing 數據失敗：', error.message);
+      console.error('處理打字數據失敗：', error.message);
       if (typingIndicator) typingIndicator.textContent = '無法載入輸入狀態';
     }
   }, error => {
-    console.error('監聽 typing 失敗：', error.message);
+    console.error('監聽打字狀態失敗：', error.message);
     if (typingIndicator) typingIndicator.textContent = '無法載入輸入狀態';
   });
 }
@@ -464,12 +479,12 @@ messageInput.addEventListener('input', () => {
 
   if (!typingTimeout) { // 僅在第一次打字時設置狀態
     set(typingRef, { name: user.displayName })
-      .catch(error => console.error('設置 typing 失敗：', error.message));
+      .catch(error => console.error('設置打字狀態失敗：', error.message));
   }
   typingTimeout = setTimeout(() => {
     // 2 秒後清除打字狀態
     set(typingRef, null)
-      .catch(error => console.error('清除 typing 失敗：', error.message));
+      .catch(error => console.error('清除打字狀態失敗：', error.message));
     typingTimeout = null;
   }, 2000);
 });
