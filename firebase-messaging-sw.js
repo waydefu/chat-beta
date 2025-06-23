@@ -23,14 +23,9 @@ if ('serviceWorker' in navigator && 'PushManager' in window) {
         const notificationTitle = payload.notification?.title || '新訊息';
         const notificationOptions = {
           body: payload.notification?.body || '您有新的聊天訊息',
-          icon: '/image/logo.png', // 調整為根目錄路徑
+          icon: '/chat-beta/image/logo.png',
           data: payload.data || {},
-          actions: [
-            {
-              action: 'view-message',
-              title: '查看訊息'
-            }
-          ]
+          actions: [{ action: 'view-message', title: '查看訊息' }]
         };
         self.registration.showNotification(notificationTitle, notificationOptions);
       } catch (error) {
@@ -41,7 +36,7 @@ if ('serviceWorker' in navigator && 'PushManager' in window) {
     self.addEventListener('notificationclick', event => {
       event.notification.close();
       if (event.action === 'view-message') {
-        const url = '/'; // 調整為根目錄
+        const url = '/chat-beta/';
         event.waitUntil(
           clients.matchAll({ type: 'window', includeUncontrolled: true }).then(clientsArr => {
             const client = clientsArr.find(c => c.url.includes(url) && 'focus' in c);

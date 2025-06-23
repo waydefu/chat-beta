@@ -1,6 +1,6 @@
 /* === 背景與基本字體設定 === */
 body {
-  background-image: url('/image/背景.png');
+  background-image: url('/chat-beta/image/背景.png');
   background-size: cover;
   background-position: center;
   background-repeat: no-repeat;
@@ -15,6 +15,7 @@ body {
   align-items: flex-start;
   min-height: 100vh;
 }
+/* 其他樣式保持不變 */
 
 /* 置中標題 */
 h1, h2 {
