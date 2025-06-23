@@ -73,24 +73,34 @@ async function getUserDisplayName(uid) {
 // 渲染單條訊息
 async function appendMessage(msg, uid) {
   let time = '';
+  let timestampDate;
+
+  // 嘗試從 Firebase Timestamp 或 Date 物件獲取日期
+  // 更加寬容地處理 timestamp
   try {
-    if (msg.timestamp && typeof msg.timestamp.toDate === 'function') {
-      // 如果是 Firebase Timestamp 物件，正常轉換
-      time = msg.timestamp.toDate().toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' });
+    if (msg.timestamp instanceof Date) { // 如果已經是 JS Date 對象 (例如從本地快照手動處理)
+      timestampDate = msg.timestamp;
+    } else if (msg.timestamp && typeof msg.timestamp.toDate === 'function') {
+      // 這是 Firebase Timestamp 物件的標準處理方式
+      timestampDate = msg.timestamp.toDate();
     } else if (msg.timestamp) {
-      // 如果 timestamp 存在但其 .toDate() 方法不存在，
-      // 這表示它是 serverTimestamp() 的本地佔位符。
-      // 在這種情況下，使用當前瀏覽器時間作為近似顯示。
-      console.warn('收到非 Timestamp 的 timestamp 佔位符，使用本地時間作為備用:', msg.id, msg.timestamp);
-      time = new Date().toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' });
+      // 如果 timestamp 存在，但不是 Date 也不是帶 toDate() 的 Firebase Timestamp
+      // 這通常是 serverTimestamp() 的本地佔位符
+      // 為了立即顯示，我們回退到當前本地時間
+      console.warn('收到非 Firebase Timestamp 物件的時間戳佔位符，使用當前本地時間作為備用。訊息ID:', msg.id, '原始值:', msg.timestamp);
+      timestampDate = new Date(); // 當前瀏覽器的本地時間
     } else {
-      // timestamp 不存在的情況
-      console.warn('訊息沒有時間戳:', msg.id);
-      time = '未知時間';
+      // 如果 timestamp 欄位完全不存在，這是數據問題
+      console.warn('訊息中缺少時間戳欄位。訊息ID:', msg.id);
+      timestampDate = new Date(); // 仍然使用當前時間作為最安全的 fallback
     }
+
+    // 格式化時間
+    time = timestampDate.toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' });
+
   } catch (error) {
-    console.error('渲染時間戳失敗：', msg.id, error.message);
-    time = '未知時間';
+    console.error('處理訊息時間戳時發生錯誤：', msg.id, error.message, '原始時間戳:', msg.timestamp);
+    time = '未知時間'; // 發生任何錯誤時最終顯示
   }
 
   const side = msg.uid === uid ? 'you' : 'other';
@@ -110,7 +120,8 @@ async function appendMessage(msg, uid) {
 
   const bubble = document.createElement('div');
   bubble.className = `message ${side}`;
-  bubble.setAttribute('aria-label', `${msg.user} 說：${sanitizeInput(msg.text)}，時間：${time}`); // 確保文本也 sanitized
+  // 確保 aria-label 中的文本也進行了 sanitized
+  bubble.setAttribute('aria-label', `${msg.user} 說：${sanitizeInput(msg.text)}，時間：${time}`);
   bubble.innerHTML = `
     <span class="message-text">${sanitizeInput(msg.text)}</span>
     <span class="message-time">${time}</span>
@@ -240,13 +251,17 @@ joinRoomBtn.onclick = async () => {
           console.log('時間戳是否有 toDate 方法:', typeof msg.timestamp?.toDate);
           console.log('--- 快照處理結束 ---');
 
+          // 直接調用 appendMessage，讓其內部邏輯處理時間戳
           await appendMessage(msg, uid);
+
           // 確保訊息被閱讀 (除了發送者自己，其他人才需要標記已讀)
           if (msg.uid !== uid && !msg.readBy?.includes(uid)) { // 修改條件：如果是別人發的且我還沒讀
             await markMessageAsRead(msg.id, uid);
           }
         }
         // 可以選擇處理 'modified' 和 'removed' 類型，但目前主要處理 'added'
+        // 'modified' 通常用於處理 serverTimestamp() 從佔位符變為真實時間戳的情況，
+        // 但目前 appendMessage 已經能處理佔位符，且 UI 上更新複雜，暫不處理
       });
     }, error => {
       console.error('監聽訊息失敗：', error);
@@ -298,7 +313,7 @@ sendBtn.onclick = async () => {
     const text = messageInput.value.trim();
     const user = auth.currentUser;
 
-    console.log('訊息內容:', text ? text.substring(0, 20) + '...' : '[空]');
+    console.log('訊息內容:', text ? text.substring(0, Math.min(text.length, 50)) + (text.length > 50 ? '...' : '') : '[空]');
     console.log('當前用戶:', user ? user.displayName : '[未登入]');
     console.log('當前聊天室:', currentRoom || '[未選擇]');
 
