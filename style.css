@@ -1,39 +1,29 @@
-/* 全局樣式 */
 body {
   background: url('/chat-beta/image/背景.png') no-repeat center center fixed;
   background-size: cover;
-  font-family: 'Segoe UI', 'Arial', 'Noto Sans TC', sans-serif;
+  font-family: 'Segoe UI', 'Arial', sans-serif;
   margin: 0;
   padding: 10px;
   display: flex;
   justify-content: center;
-  align-items: flex-start;
   min-height: 100vh;
   color: #333;
 }
 
-/* 登入與聊天區塊 */
 .login-wrapper {
   width: 100%;
   max-width: 900px;
 }
 
 .login-card {
-  background: rgba(255, 255, 255, 0.9); /* 半透明背景 */
+  background: rgba(255, 255, 255, 0.9);
   padding: 20px;
-  border-radius: 12px;
-  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
   text-align: center;
-  width: 100%;
-  animation: fadeIn 0.5s ease-in;
 }
 
-@keyframes fadeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
-
-.auth-section .avatar-placeholder-img {
+.avatar-placeholder-img {
   width: 80px;
   height: 80px;
   border-radius: 50%;
@@ -43,17 +33,16 @@ body {
 .google-btn {
   padding: 10px 20px;
   border: none;
-  border-radius: 12px;
-  background: linear-gradient(135deg, #4285f4, #357abd);
+  border-radius: 8px;
+  background: #4285f4;
   color: white;
   cursor: pointer;
   font-size: 1rem;
   margin-top: 10px;
-  transition: background 0.3s;
 }
 
 .google-btn:hover {
-  background: linear-gradient(135deg, #357abd, #2d558f);
+  background: #357abd;
 }
 
 .chat-section {
@@ -72,8 +61,7 @@ body {
   flex: 1;
   padding: 8px;
   border: 1px solid #ccc;
-  border-radius: 12px;
-  transition: border-color 0.3s;
+  border-radius: 8px;
 }
 
 #room-name:focus {
@@ -84,11 +72,10 @@ body {
 #join-room {
   padding: 8px 15px;
   border: none;
-  border-radius: 12px;
+  border-radius: 8px;
   background: #4caf50;
   color: white;
   cursor: pointer;
-  transition: background 0.3s;
 }
 
 #join-room:hover {
@@ -99,90 +86,69 @@ body {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  width: 100%;
 }
 
 .chat-box {
   flex: 1;
   background: rgba(255, 255, 255, 0.9);
   border: 1px solid #ddd;
-  border-radius: 12px;
+  border-radius: 8px;
   padding: 10px;
   overflow-y: auto;
   max-height: 500px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
   scroll-behavior: smooth;
 }
 
 .message-input-wrapper {
   width: 100%;
-  max-width: 900px;
 }
 
 .message-input-indicator {
   font-size: 0.85rem;
   color: #1e40af;
   background: #f0f9ff;
-  padding: 8px 14px;
+  padding: 8px;
   margin-bottom: 10px;
-  border-radius: 12px;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.1);
-  max-width: fit-content;
-  animation: slideIn 0.3s ease-out;
-}
-
-@keyframes slideIn {
-  from { transform: translateY(-10px); opacity: 0; }
-  to { transform: translateY(0); opacity: 1; }
+  border-radius: 8px;
 }
 
 .message-input-container {
   display: flex;
-  align-items: stretch;
   gap: 10px;
 }
 
 #message-input {
   flex: 1;
-  padding: 14px 18px;
+  padding: 10px;
   border: 1px solid #ccc;
-  border-radius: 12px;
-  background: rgba(255, 255, 255, 0.9);
-  font-size: 1rem;
+  border-radius: 8px;
   resize: none;
   min-height: 60px;
-  max-height: 200px;
-  overflow-y: auto;
-  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.05);
-  transition: border-color 0.3s, box-shadow 0.3s;
 }
 
 #message-input:focus {
   border-color: #011749;
   outline: none;
-  box-shadow: 0 0 8px rgba(1, 24, 73, 0.2);
 }
 
 #send-btn {
-  padding: 14px 20px;
+  padding: 10px 20px;
   border: none;
-  border-radius: 12px;
-  background: linear-gradient(135deg, #011749, #021548);
+  border-radius: 8px;
+  background: #011749;
   color: white;
   cursor: pointer;
-  transition: background 0.3s;
 }
 
 #send-btn:hover {
-  background: linear-gradient(135deg, #021548, #032a5b);
+  background: #021548;
 }
 
 .presence-list {
   background: rgba(255, 255, 255, 0.9);
   border: 1px solid #ddd;
-  border-radius: 12px;
+  border-radius: 8px;
   padding: 10px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
 }
 
 footer {
@@ -193,91 +159,21 @@ footer {
 }
 
 @media (max-width: 600px) {
-  .chat-box {
-    max-height: calc(100vh - 350px);
-  }
-  .message-input-container {
-    flex-direction: column;
-    gap: 6px;
-  }
-  #message-input, #send-btn {
-    width: 100%;
-    height: 48px;
-    font-size: 1rem;
-    border-radius: 6px;
-  }
-  #typing-indicator {
-    width: 100%;
-    margin-bottom: 6px;
-  }
+  .chat-box { max-height: calc(100vh - 350px); }
+  .message-input-container { flex-direction: column; gap: 6px; }
+  #message-input, #send-btn { width: 100%; height: 48px; border-radius: 6px; }
+  #typing-indicator { width: 100%; margin-bottom: 6px; }
 }
 
-/* 訊息樣式 */
-.message-row {
-  display: flex;
-  margin-bottom: 10px;
-}
-
-.message {
-  max-width: 70%;
-  padding: 10px 15px;
-  border-radius: 12px;
-  margin: 5px 0;
-  position: relative;
-  background: rgba(255, 255, 255, 0.9);
-}
-
-.message.you {
-  margin-left: 20%;
-}
-
-.message.other {
-  margin-right: 20%;
-}
-
-.avatar-text {
-  width: 30px;
-  height: 30px;
-  background: #60a5fa;
-  color: white;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 0.9rem;
-  margin: 0 10px;
-}
-
-.message-time, .read-status {
-  font-size: 0.7rem;
-  color: #666;
-}
-
-.read-status {
-  position: absolute;
-  right: 5px;
-  bottom: 5px;
-}
-
-.message-actions {
-  display: none;
-  position: absolute;
-  top: 5px;
-  right: 5px;
-}
-
-.message:hover .message-actions {
-  display: flex;
-  gap: 5px;
-}
-
-.message-actions button {
-  padding: 2px 6px;
-  font-size: 0.7rem;
-  border: none;
-  border-radius: 4px;
-  cursor: pointer;
-}
-
+.message-row { display: flex; margin-bottom: 10px; }
+.message { max-width: 70%; padding: 10px; border-radius: 8px; background: rgba(255, 255, 255, 0.9); }
+.message.you { margin-left: 20%; }
+.message.other { margin-right: 20%; }
+.avatar-text { width: 30px; height: 30px; background: #60a5fa; color: white; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 10px; }
+.message-time, .read-status { font-size: 0.7rem; color: #666; }
+.read-status { position: absolute; right: 5px; bottom: 5px; }
+.message-actions { display: none; position: absolute; top: 5px; right: 5px; }
+.message:hover .message-actions { display: flex; gap: 5px; }
+.message-actions button { padding: 2px 6px; font-size: 0.7rem; border: none; border-radius: 4px; cursor: pointer; }
 .edit-btn { background: #fbbf24; color: white; }
 .delete-btn { background: #ef4444; color: white; }
