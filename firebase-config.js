@@ -19,4 +19,4 @@ const provider = new GoogleAuthProvider();
 const firestore = getFirestore(app);
 const rtdb = getDatabase(app);
 
-export { auth, provider, firestore, rtdb, app };
+export { auth, provider, firestore, rtdb, app }; 
