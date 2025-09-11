@@ -1,7 +1,8 @@
 // main.js
-import { auth, provider, firestore } from './firebase-config.js';
+import { auth, provider, firestore, rtdb } from './firebase-config.js';
 import { signInWithPopup, signOut, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
 import { collection, addDoc, onSnapshot, orderBy, query, serverTimestamp, setDoc, doc, updateDoc, getDoc, arrayUnion } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+import { ref, onValue, onDisconnect, set, serverTimestamp as dbServerTimestamp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js';
 
 // DOM 元素
 const loginBtn = document.getElementById('login-btn');
@@ -16,9 +17,11 @@ const roomInput = document.getElementById('room-name');
 const joinRoomBtn = document.getElementById('join-room');
 const roomList = document.getElementById('room-list');
 const typingIndicator = document.getElementById('typing-indicator');
+const presenceList = document.getElementById('presence-list');
 
 let currentRoom = '';
 let unsubscribe = null;
+let typingTimeout = null;
 const userNameCache = new Map();
 
 // 工具函數
@@ -41,6 +44,7 @@ async function getUserDisplayName(uid) {
   }
 }
 
+// 顯示訊息
 async function appendMessage(msg, uid) {
   let timestampDate;
   try {
@@ -79,18 +83,14 @@ async function appendMessage(msg, uid) {
     <span class="read-status" title="${readByText}">${isReadByMe ? '✔' : ''}</span>
   `;
 
-  if (side === 'you') {
-    row.appendChild(bubble);
-    row.appendChild(avatarText);
-  } else {
-    row.appendChild(avatarText);
-    row.appendChild(bubble);
-  }
+  if (side === 'you') { row.appendChild(bubble); row.appendChild(avatarText); }
+  else { row.appendChild(avatarText); row.appendChild(bubble); }
 
   chatBox.appendChild(row);
   chatBox.scrollTop = chatBox.scrollHeight;
 }
 
+// 標記訊息已讀
 async function markMessageAsRead(msgId, uid) {
   try {
     const msgRef = doc(firestore, 'rooms', currentRoom, 'messages', msgId);
@@ -113,6 +113,8 @@ onAuthStateChanged(auth, user => {
     loginBtn.style.display = 'none';
     setDoc(doc(firestore, 'users', user.uid), { displayName: user.displayName || '匿名使用者' }, { merge: true });
     watchRoomList();
+    setupPresence(user);
+    watchPresence();
   } else {
     userInfo.textContent = '';
     loginCard.style.display = 'block';
@@ -121,6 +123,7 @@ onAuthStateChanged(auth, user => {
     loginBtn.style.display = 'inline-block';
     chatBox.innerHTML = '';
     roomList.innerHTML = '<option disabled selected>選擇聊天室</option>';
+    presenceList.innerHTML = `<h3>🟢 在線使用者</h3>`;
     if (unsubscribe) unsubscribe();
     userNameCache.clear();
   }
@@ -150,6 +153,7 @@ joinRoomBtn.onclick = async () => {
     });
   });
 
+  watchTyping();
   joinRoomBtn.disabled = false;
   joinRoomBtn.textContent = '加入 / 建立聊天室';
 };
@@ -167,7 +171,6 @@ function watchRoomList() {
     });
   });
 }
-
 roomList.onchange = () => { roomInput.value = roomList.value; };
 
 // 發訊息
@@ -186,6 +189,60 @@ sendBtn.onclick = async () => {
   messageInput.value = '';
 };
 
-messageInput.addEventListener('keypress', e => {
-  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendBtn.click(); }
+// Enter 發送
+messageInput.addEventListener('keypress', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendBtn.click(); } });
+
+// 在線狀態
+function setupPresence(user) {
+  const userRef = ref(rtdb, 'presence/' + user.uid);
+  const connRef = ref(rtdb, '.info/connected');
+  const onlineObj = { state: 'online', displayName: user.displayName, last_changed: dbServerTimestamp() };
+  const offlineObj = { state: 'offline', displayName: user.displayName, last_changed: dbServerTimestamp() };
+
+  onValue(connRef, snap => {
+    if (snap.val() === false) return;
+    onDisconnect(userRef).set(offlineObj).then(() => { set(userRef, onlineObj); });
+  });
+}
+
+function watchPresence() {
+  const allRef = ref(rtdb, 'presence');
+  onValue(allRef, snap => {
+    const users = snap.val() || {};
+    presenceList.innerHTML = `<h3>🟢 在線使用者</h3>`;
+    for (const uid in users) {
+      if (users[uid]?.state === 'online') {
+        const div = document.createElement('div');
+        div.textContent = users[uid].displayName || uid;
+        presenceList.appendChild(div);
+      }
+    }
+  });
+}
+
+// 正在輸入提示
+function watchTyping() {
+  if (!currentRoom) return;
+  const typingRef = ref(rtdb, `typing/${currentRoom}`);
+  onValue(typingRef, snap => {
+    const data = snap.val() || {};
+    const othersTyping = Object.values(data)
+      .filter(u => u && u.name !== auth.currentUser?.displayName)
+      .map(u => u.name);
+    typingIndicator.textContent = othersTyping.length ? `${othersTyping.join('、')} 正在輸入...` : '';
+  });
+}
+
+messageInput.addEventListener('input', () => {
+  const user = auth.currentUser;
+  if (!user || !currentRoom) return;
+
+  const typingRef = ref(rtdb, `typing/${currentRoom}/${user.uid}`);
+  clearTimeout(typingTimeout);
+  set(typingRef, { name: user.displayName }).catch(console.error);
+  typingTimeout = setTimeout(() => { set(typingRef, null).catch(console.error); typingTimeout = null; }, 2000);
+
+  // 自動調整輸入框高度
+  messageInput.style.height = 'auto';
+  messageInput.style.height = `${messageInput.scrollHeight}px`;
 });
