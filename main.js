@@ -1,30 +1,8 @@
 // main.js
-import { auth, provider, firestore, rtdb, app } from './firebase-config.js';
-import {
-  signInWithPopup,
-  signOut,
-  onAuthStateChanged
-} from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
-import {
-  collection,
-  addDoc,
-  onSnapshot,
-  orderBy,
-  query,
-  serverTimestamp,
-  setDoc,
-  doc,
-  updateDoc,
-  arrayUnion,
-  getDoc
-} from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
-import {
-  ref,
-  onValue,
-  onDisconnect,
-  set,
-  serverTimestamp as dbServerTimestamp
-} from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js';
+import { auth, provider, firestore, rtdb } from './firebase-config.js';
+import { signInWithPopup, signOut, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
+import { collection, addDoc, onSnapshot, orderBy, query, serverTimestamp, setDoc, doc, updateDoc, arrayUnion, getDoc } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+import { ref, onValue, onDisconnect, set, serverTimestamp as dbServerTimestamp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js';
 
 // === DOM 元素 ===
 const loginBtn = document.getElementById('login-btn');
@@ -66,30 +44,25 @@ async function getUserDisplayName(uid) {
   }
 }
 
+// 渲染單條訊息
 async function appendMessage(msg, uid) {
-  let time = '';
   let timestampDate;
-
   try {
     if (msg.timestamp instanceof Date) {
       timestampDate = msg.timestamp;
     } else if (msg.timestamp && typeof msg.timestamp.toDate === 'function') {
       timestampDate = msg.timestamp.toDate();
     } else {
-      timestampDate = new Date(); // 使用當前時間作為回退
+      timestampDate = new Date();
     }
-
-    time = timestampDate.toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' });
-  } catch (error) {
-    console.error('處理訊息時間戳時發生錯誤：', msg.id, error.message);
-    time = '未知時間';
+  } catch {
+    timestampDate = new Date();
   }
-
+  const time = timestampDate.toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' });
   const side = msg.uid === uid ? 'you' : 'other';
 
   let readByText = '';
   let isReadByMe = false;
-
   if (msg.readBy && Array.isArray(msg.readBy) && msg.readBy.length > 0) {
     const readByNames = await Promise.all(msg.readBy.map(getUserDisplayName));
     readByText = `已讀：${readByNames.join('、')}`;
@@ -109,10 +82,11 @@ async function appendMessage(msg, uid) {
   const bubble = document.createElement('div');
   bubble.className = `message ${side}`;
   bubble.setAttribute('aria-label', `${msg.user} 說：${sanitizeInput(msg.text)}，時間：${time}`);
+  bubble.setAttribute('data-msg-id', msg.id);
   bubble.innerHTML = `
     <span class="message-text">${sanitizeInput(msg.text)}</span>
     <span class="message-time">${time}</span>
-    <span class="read-status" title="${readByText}">${isReadByMe ? '✔' : ''}</span>
+    <span class="read-status" data-msg-id="${msg.id}" title="${readByText}">${isReadByMe ? '✔' : ''}</span>
   `;
 
   if (side === 'you') {
@@ -127,24 +101,25 @@ async function appendMessage(msg, uid) {
   chatBox.scrollTop = chatBox.scrollHeight;
 }
 
+// 標記訊息為已讀
 async function markMessageAsRead(msgId, uid) {
   try {
     const msgRef = doc(firestore, 'rooms', currentRoom, 'messages', msgId);
     await updateDoc(msgRef, { readBy: arrayUnion(uid) });
   } catch (error) {
-    console.error(`標記訊息 ${msgId} 已讀失敗：`, error.message);
+    console.error(`標記訊息 ${msgId} 為已讀失敗：`, error);
   }
 }
 
 // === 身份驗證 ===
 loginBtn.onclick = async () => {
-  try { await signInWithPopup(auth, provider); }
-  catch (error) { console.error('登入失敗：', error); alert(`登入失敗：${error.message}`); }
+  try { await signInWithPopup(auth, provider); } 
+  catch (error) { alert(`登入失敗：${error.message}`); }
 };
 
 logoutBtn.onclick = async () => {
-  try { await signOut(auth); }
-  catch (error) { console.error('登出失敗：', error); alert('無法登出，請稍後重試'); }
+  try { await signOut(auth); } 
+  catch (error) { alert('無法登出，請稍後重試'); }
 };
 
 onAuthStateChanged(auth, user => {
@@ -155,9 +130,7 @@ onAuthStateChanged(auth, user => {
     logoutBtn.style.display = 'inline-block';
     loginBtn.style.display = 'none';
 
-    setDoc(doc(firestore, 'users', user.uid), {
-      displayName: user.displayName || '匿名使用者'
-    }, { merge: true }).catch(error => console.error('儲存使用者名稱失敗：', error.message));
+    setDoc(doc(firestore, 'users', user.uid), { displayName: user.displayName || '匿名使用者' }, { merge: true });
 
     setupPresence(user);
     watchPresence();
@@ -183,7 +156,6 @@ joinRoomBtn.onclick = async () => {
 
   joinRoomBtn.disabled = true;
   joinRoomBtn.textContent = '載入中...';
-
   currentRoom = room;
   if (unsubscribe) unsubscribe();
 
@@ -191,22 +163,20 @@ joinRoomBtn.onclick = async () => {
     await setDoc(doc(firestore, 'rooms', room), { createdAt: serverTimestamp() }, { merge: true });
 
     const msgsRef = collection(firestore, 'rooms', currentRoom, 'messages');
-    const q = query(msgsRef, orderBy('timestamp'));
+    const q = query(msgsRef, orderBy('timestamp', 'asc'));
 
     unsubscribe = onSnapshot(q, snap => {
+      chatBox.innerHTML = ''; // 刷新訊息列表
       const uid = auth.currentUser?.uid;
-      snap.docChanges().forEach(async change => {
-        if (change.type === 'added') {
-          const msg = { id: change.doc.id, ...change.doc.data() };
-          await appendMessage(msg, uid);
-          if (!msg.readBy?.includes(uid)) await markMessageAsRead(msg.id, uid);
-        }
+      snap.forEach(doc => {
+        const msg = { id: doc.id, ...doc.data() };
+        appendMessage(msg, uid);
+        if (!msg.readBy?.includes(uid)) markMessageAsRead(msg.id, uid);
       });
     });
 
     watchTyping();
   } catch (error) {
-    console.error('加入聊天室失敗：', error);
     alert(`加入聊天室失敗：${error.message}`);
   } finally {
     joinRoomBtn.disabled = false;
@@ -214,6 +184,7 @@ joinRoomBtn.onclick = async () => {
   }
 };
 
+// 即時監聽聊天室清單
 function watchRoomList() {
   const roomsRef = collection(firestore, 'rooms');
   onSnapshot(roomsRef, snap => {
@@ -224,7 +195,7 @@ function watchRoomList() {
       opt.textContent = doc.id;
       roomList.appendChild(opt);
     });
-  }, error => console.error('監聽聊天室清單失敗：', error));
+  });
 }
 
 roomList.onchange = () => { roomInput.value = roomList.value; };
@@ -245,28 +216,24 @@ sendBtn.onclick = async () => {
     });
     messageInput.value = '';
   } catch (error) {
-    console.error('發送訊息失敗：', error.message);
     alert('無法發送訊息，請稍後重試');
   }
 };
 
 messageInput.addEventListener('keypress', e => {
-  if (e.key === 'Enter' && !e.shiftKey) {
-    e.preventDefault();
-    sendBtn.click();
-  }
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendBtn.click(); }
 });
 
 // === 在線狀態 ===
 function setupPresence(user) {
   const userRef = ref(rtdb, 'presence/' + user.uid);
   const connRef = ref(rtdb, '.info/connected');
+  const onlineObj = { state: 'online', displayName: user.displayName || '匿名使用者', last_changed: dbServerTimestamp() };
+  const offlineObj = { state: 'offline', displayName: user.displayName || '匿名使用者', last_changed: dbServerTimestamp() };
 
   onValue(connRef, snap => {
-    if (!snap.val()) return;
-    onDisconnect(userRef).set({ state: 'offline', displayName: user.displayName, last_changed: dbServerTimestamp() })
-      .then(() => set(userRef, { state: 'online', displayName: user.displayName, last_changed: dbServerTimestamp() }))
-      .catch(error => console.error('設置在線狀態失敗：', error.message));
+    if (snap.val() === false) return;
+    onDisconnect(userRef).set(offlineObj).then(() => set(userRef, onlineObj));
   });
 }
 
@@ -274,4 +241,39 @@ function watchPresence() {
   const allRef = ref(rtdb, 'presence');
   onValue(allRef, snap => {
     const users = snap.val() || {};
-    presenceList
+    presenceList.innerHTML = `<h3>🟢 在線使用者</h3>`;
+    for (const uid in users) {
+      if (users[uid]?.state === 'online') {
+        const div = document.createElement('div');
+        div.textContent = users[uid].displayName || uid;
+        presenceList.appendChild(div);
+      }
+    }
+  });
+}
+
+// === 正在輸入提示 ===
+function watchTyping() {
+  if (!currentRoom) return;
+  const typingRef = ref(rtdb, `typing/${currentRoom}`);
+  onValue(typingRef, snap => {
+    const data = snap.val() || {};
+    const othersTyping = Object.values(data)
+      .filter(u => u && u.name !== auth.currentUser?.displayName)
+      .map(u => u.name);
+    typingIndicator.textContent = othersTyping.length ? `${othersTyping.join('、')} 正在輸入...` : '';
+  });
+}
+
+let typingTimeout;
+messageInput.addEventListener('input', () => {
+  messageInput.style.height = 'auto';
+  messageInput.style.height = `${messageInput.scrollHeight}px`;
+
+  const user = auth.currentUser;
+  if (!user || !currentRoom) return;
+  const typingRef = ref(rtdb, `typing/${currentRoom}/${user.uid}`);
+  clearTimeout(typingTimeout);
+  set(typingRef, { name: user.displayName }).catch(console.error);
+  typingTimeout = setTimeout(() => { set(typingRef, null).catch(console.error); typingTimeout = null; }, 2000);
+});
