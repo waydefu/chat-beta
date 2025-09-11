@@ -1,7 +1,7 @@
-import { auth, provider, firestore, rtdb, messaging } from './firebase-config.js';
+import { auth, provider, firestore, rtdb } from './firebase-config.js';
 import { signInWithPopup, signOut } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
 import { collection, addDoc, onSnapshot, query, orderBy, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
-import { ref, set, onValue, remove } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js';
+import { ref, set, onValue, remove, onDisconnect } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js';
 
 const loginBtn = document.getElementById('login-btn');
 const logoutBtn = document.getElementById('logout-btn');
@@ -34,7 +34,6 @@ logoutBtn.addEventListener('click', async () => {
 });
 
 // --- 聊天室管理 ---
-const roomList = document.getElementById('room-list');
 const roomNameInput = document.getElementById('room-name');
 const joinRoomBtn = document.getElementById('join-room');
 let currentRoom = null;
@@ -81,18 +80,19 @@ async function sendMessage() {
 function listenMessages(room) {
   const q = query(collection(firestore, 'rooms', room, 'messages'), orderBy('timestamp'));
   onSnapshot(q, snapshot => {
-    chatBox.innerHTML = '';
-    snapshot.forEach(doc => {
-      const data = doc.data();
-      const div = document.createElement('div');
-      div.className = `message-row ${data.uid === currentUser.uid ? 'you' : 'other'}`;
-      div.innerHTML = `
-        <div class="avatar-text">${(data.name || '?')[0]}</div>
-        <div class="message ${data.uid === currentUser.uid ? 'you' : 'other'}">
-          <span class="message-text">${data.text}</span>
-        </div>`;
-      chatBox.appendChild(div);
-      chatBox.scrollTop = chatBox.scrollHeight;
+    snapshot.docChanges().forEach(change => {
+      if (change.type === 'added') {
+        const data = change.doc.data();
+        const div = document.createElement('div');
+        div.className = `message-row ${data.uid === currentUser.uid ? 'you' : 'other'}`;
+        div.innerHTML = `
+          <div class="avatar-text">${(data.name || '?')[0]}</div>
+          <div class="message ${data.uid === currentUser.uid ? 'you' : 'other'}">
+            <span class="message-text">${data.text}</span>
+          </div>`;
+        chatBox.appendChild(div);
+        chatBox.scrollTop = chatBox.scrollHeight;
+      }
     });
   });
 }
@@ -103,19 +103,20 @@ const presenceList = document.getElementById('presence-list');
 function setupPresence(room) {
   const userRef = ref(rtdb, `presence/${room}/${currentUser.uid}`);
   set(userRef, currentUser.displayName);
-  window.addEventListener('beforeunload', () => remove(userRef));
+  onDisconnect(userRef).remove(); // 斷線自動移除
 
   const roomRef = ref(rtdb, `presence/${room}`);
   onValue(roomRef, snapshot => {
     const users = snapshot.val() || {};
     presenceList.innerHTML = '<h3>🟢 在線使用者</h3>';
-    Object.values(users).forEach(u => {
-      const div = document.createElement('div');
-      div.textContent = u;
-      presenceList.appendChild(div);
-    });
-    if (!Object.values(users).length) {
+    if (Object.keys(users).length === 0) {
       presenceList.innerHTML += '<div>無在線使用者</div>';
+    } else {
+      Object.values(users).forEach(u => {
+        const div = document.createElement('div');
+        div.textContent = u;
+        presenceList.appendChild(div);
+      });
     }
   });
 }
