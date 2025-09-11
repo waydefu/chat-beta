@@ -1,179 +1,55 @@
-body {
-  background: url('/chat-beta/image/背景.png') no-repeat center center fixed;
-  background-size: cover;
-  font-family: 'Segoe UI', 'Arial', sans-serif;
-  margin: 0;
-  padding: 10px;
-  display: flex;
-  justify-content: center;
-  min-height: 100vh;
-  color: #333;
-}
-
-.login-wrapper {
-  width: 100%;
-  max-width: 900px;
-}
-
-.login-card {
-  background: rgba(255, 255, 255, 0.9);
-  padding: 20px;
-  border-radius: 8px;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-  text-align: center;
-}
-
-.avatar-placeholder-img {
-  width: 80px;
-  height: 80px;
-  border-radius: 50%;
-  margin-bottom: 15px;
-}
-
-.google-btn {
-  padding: 10px 20px;
-  border: none;
-  border-radius: 8px;
-  background: #4285f4;
-  color: white;
-  cursor: pointer;
-  font-size: 1rem;
-  margin-top: 10px;
-}
-
-.google-btn:hover {
-  background: #357abd;
-}
-
-.chat-section {
-  width: 100%;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.room-section {
-  display: flex;
-  gap: 10px;
-}
-
-#room-name {
-  flex: 1;
-  padding: 8px;
-  border: 1px solid #ccc;
-  border-radius: 8px;
-}
-
-#room-name:focus {
-  border-color: #011749;
-  outline: none;
-}
-
-#join-room {
-  padding: 8px 15px;
-  border: none;
-  border-radius: 8px;
-  background: #4caf50;
-  color: white;
-  cursor: pointer;
-}
-
-#join-room:hover {
-  background: #45a049;
-}
-
-.chat-container {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.chat-box {
-  flex: 1;
-  background: rgba(255, 255, 255, 0.9);
-  border: 1px solid #ddd;
-  border-radius: 8px;
-  padding: 10px;
-  overflow-y: auto;
-  max-height: 500px;
-  scroll-behavior: smooth;
-}
-
-.message-input-wrapper {
-  width: 100%;
-}
-
-.message-input-indicator {
-  font-size: 0.85rem;
-  color: #1e40af;
-  background: #f0f9ff;
-  padding: 8px;
-  margin-bottom: 10px;
-  border-radius: 8px;
-}
-
-.message-input-container {
-  display: flex;
-  gap: 10px;
-}
-
-#message-input {
-  flex: 1;
-  padding: 10px;
-  border: 1px solid #ccc;
-  border-radius: 8px;
-  resize: none;
-  min-height: 60px;
-}
-
-#message-input:focus {
-  border-color: #011749;
-  outline: none;
-}
-
-#send-btn {
-  padding: 10px 20px;
-  border: none;
-  border-radius: 8px;
-  background: #011749;
-  color: white;
-  cursor: pointer;
-}
-
-#send-btn:hover {
-  background: #021548;
-}
-
-.presence-list {
-  background: rgba(255, 255, 255, 0.9);
-  border: 1px solid #ddd;
-  border-radius: 8px;
-  padding: 10px;
-}
-
-footer {
-  text-align: center;
-  font-size: 0.8rem;
-  color: #666;
-  margin-top: 10px;
-}
-
-@media (max-width: 600px) {
-  .chat-box { max-height: calc(100vh - 350px); }
-  .message-input-container { flex-direction: column; gap: 6px; }
-  #message-input, #send-btn { width: 100%; height: 48px; border-radius: 6px; }
-  #typing-indicator { width: 100%; margin-bottom: 6px; }
-}
-
-.message-row { display: flex; margin-bottom: 10px; }
-.message { max-width: 70%; padding: 10px; border-radius: 8px; background: rgba(255, 255, 255, 0.9); }
-.message.you { margin-left: 20%; }
-.message.other { margin-right: 20%; }
-.avatar-text { width: 30px; height: 30px; background: #60a5fa; color: white; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 10px; }
-.message-time, .read-status { font-size: 0.7rem; color: #666; }
-.read-status { position: absolute; right: 5px; bottom: 5px; }
-.message-actions { display: none; position: absolute; top: 5px; right: 5px; }
-.message:hover .message-actions { display: flex; gap: 5px; }
-.message-actions button { padding: 2px 6px; font-size: 0.7rem; border: none; border-radius: 4px; cursor: pointer; }
-.edit-btn { background: #fbbf24; color: white; }
-.delete-btn { background: #ef4444; color: white; }
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Chat Lite - 旗艦版</title>
+  <link rel="stylesheet" href="/chat-beta/style.css">
+  <link rel="icon" type="image/png" href="/chat-beta/image/favicon.png" onerror="this.src='https://via.placeholder.com/192';">
+</head>
+<body>
+  <div class="login-wrapper" role="main">
+    <div class="login-card auth-section" id="login-card">
+      <img src="/chat-beta/image/logo.png" alt="Chat Lite 標誌" class="avatar-placeholder-img" onerror="this.src='https://via.placeholder.com/80';">
+      <h1 class="title">歡迎來到 Chat Lite 旗艦版</h1>
+      <p id="user-info" class="subtitle"></p>
+      <button id="login-btn" class="google-btn" aria-label="使用 Google 登入">使用 Google 登入</button>
+      <p class="terms">登入即同意<a href="/terms.html" target="_blank">服務條款</a>。</p>
+    </div>
+    <div id="chat-section" class="chat-section" style="display:none;">
+      <header>
+        <button id="logout-btn" class="google-btn" style="display:none;">登出</button>
+        <h2 class="chat-title">聊天室</h2>
+      </header>
+      <div class="room-section">
+        <select id="room-list" aria-label="選擇聊天室">
+          <option disabled selected>選擇聊天室</option>
+        </select>
+      </div>
+      <div class="room-section">
+        <input type="text" id="room-name" placeholder="聊天室名稱" maxlength="50" aria-label="輸入聊天室名稱">
+        <button id="join-room" aria-label="加入聊天室">加入 / 建立</button>
+      </div>
+      <div class="chat-container">
+        <div id="chat-box" class="chat-box" role="log" aria-live="polite"></div>
+        <div class="message-input-wrapper">
+          <div class="message-input-indicator">
+            <p id="typing-indicator"></p>
+          </div>
+          <div class="message-input-container">
+            <textarea id="message-input" placeholder="輸入訊息..." maxlength="1000" aria-label="輸入訊息"></textarea>
+            <button id="send-btn" aria-label="送出訊息">送出</button>
+          </div>
+        </div>
+        <div id="presence-list" class="presence-list">
+          <h3>🟢 在線使用者</h3>
+        </div>
+      </div>
+      <footer>© 2025 Chat Lite. <a href="/privacy.html" target="_blank">隱私政策</a></footer>
+    </div>
+  </div>
+  <script type="module" src="/chat-beta/main.js" defer></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging.js"></script>
+</body>
+</html>
