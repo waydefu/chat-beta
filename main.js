@@ -1,7 +1,7 @@
- // main.js
+// main.js
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
 import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
-import { getFirestore, collection, addDoc, onSnapshot, orderBy, query, serverTimestamp, setDoc, doc, updateDoc, arrayUnion, deleteDoc } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+import { getFirestore, collection, addDoc, onSnapshot, orderBy, query, serverTimestamp, setDoc, doc, updateDoc, arrayUnion, deleteDoc, getDoc } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
 import { getDatabase, ref, onValue, onDisconnect, set as dbSet } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js';
 import { getMessaging, getToken, onMessage } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging.js';
 
@@ -14,8 +14,13 @@ appId: "1:838739455782:web:e7538f588ae374d204dbe7",
 databaseURL: "https://f-chat-wayde-fu-default-rtdb.firebaseio.com"
 };
 
+if (!firebaseConfig.messagingSenderId) {
+  console.error('Missing messagingSenderId in firebaseConfig');
+  alert('推送通知配置錯誤，請檢查 firebaseConfig');
+}
+
 const app = initializeApp(firebaseConfig);
-console.log('Firebase initialized:', app);
+console.log('Firebase initialized:', app.name);
 const auth = getAuth(app);
 const provider = new GoogleAuthProvider();
 const firestore = getFirestore(app);
@@ -147,7 +152,7 @@ async function requestNotificationPermission() {
 
 async function getFCMToken() {
   try {
-    const token = await getToken(messaging, { vapidKey: 'YOUR_VAPID_KEY' });
+    const token = await getToken(messaging, { vapidKey: 'YOUR_VAPID_KEY' }); // 替換為實際 VAPID 密鑰
     if (token) {
       const user = auth.currentUser;
       if (user) await setDoc(doc(firestore, 'users', user.uid), { fcmToken: token }, { merge: true });
