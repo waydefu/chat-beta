@@ -2,14 +2,13 @@
 importScripts('https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js');
 importScripts('https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging.js');
 
+// 硬編碼 Firebase 配置
 const firebaseConfig = {
-  apiKey: "YOUR_API_KEY",
-  authDomain: "YOUR_AUTH_DOMAIN",
-  projectId: "YOUR_PROJECT_ID",
-  storageBucket: "YOUR_STORAGE_BUCKET",
-  messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
-  appId: "YOUR_APP_ID",
-  databaseURL: "YOUR_DATABASE_URL"
+apiKey: "AIzaSyDOyp-qGQxiiBi9WC_43YFGt94kUZn7goI", // 從 Firebase 控制台獲取
+authDomain: "f-chat-wayde-fu.firebaseapp.com",
+projectId: "f-chat-wayde-fu",
+appId: "1:838739455782:web:e7538f588ae374d204dbe7",
+databaseURL: "https://f-chat-wayde-fu-default-rtdb.firebaseio.com"
 };
 
 firebase.initializeApp(firebaseConfig);
