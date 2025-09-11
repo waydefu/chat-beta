@@ -22,4 +22,4 @@ const firestore = getFirestore(app);
 const rtdb = getDatabase(app);
 const messaging = getMessaging(app);
 
-export { auth, provider, firestore, rtdb, app, messaging };
+export { auth, provider, firestore, rtdb, app, messaging }; 
