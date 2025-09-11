@@ -3,52 +3,54 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate">
-  <title>Chat Lite</title>
+  <title>Chat Lite - 旗艦版</title>
   <link rel="stylesheet" href="/chat-beta/style.css">
+  <link rel="icon" type="image/png" href="/chat-beta/image/favicon.png">
+  <link rel="manifest" href="/chat-beta/manifest.json">
 </head>
 <body>
-  <div class="login-wrapper">
-    <!-- 登入卡片 -->
-    <div class="login-card auth-section" id="login-card">
-      <img src="/chat-beta/image/logo.png" alt="Chat Lite 標誌" class="avatar-placeholder-img">
-      <h1 class="title">歡迎來到 <strong>Chat Lite Beta</strong></h1>
-      <p class="subtitle" id="user-info"></p>
+  <div class="login-wrapper" role="main">
+    <div class="login-card auth-section" id="login-card" role="region" aria-labelledby="login-title">
+      <img src="/chat-beta/image/logo.png" alt="Chat Lite 旗艦版標誌" class="avatar-placeholder-img">
+      <h1 id="login-title" class="title">歡迎來到 <strong>Chat Lite 旗艦版</strong></h1>
+      <p class="subtitle" id="user-info" role="status"></p>
       <button id="login-btn" class="google-btn login-btn" aria-label="使用 Google 帳戶登入">使用 Google 登入</button>
-      <p class="terms">登入即表示您同意我們的服務條款。</p>
+      <p class="terms">登入即表示您同意我們的<a href="/terms.html" target="_blank">服務條款</a>。</p>
     </div>
-
-    <!-- 聊天區 -->
-    <div id="chat-section" class="chat-section" style="display:none;">
-      <button id="logout-btn" class="google-btn" style="display:none; margin-bottom:10px;" aria-label="登出">登出</button>
-      <!-- 聊天室選擇 -->
-      <div id="room-list-section" class="room-section">
-        <select id="room-list" aria-label="選擇聊天室">
+    <div id="chat-section" class="chat-section" style="display:none;" role="region" aria-labelledby="chat-title">
+      <header>
+        <button id="logout-btn" class="google-btn" style="display:none; margin-bottom: 10px;" aria-label="登出">登出</button>
+        <h2 id="chat-title" class="chat-title">聊天室</h2>
+      </header>
+      <div id="room-list-section" class="room-section" role="navigation">
+        <select id="room-list" aria-label="選擇聊天室" aria-controls="chat-box">
           <option disabled selected>選擇聊天室</option>
         </select>
       </div>
       <div class="room-section">
-        <input type="text" id="room-name" placeholder="聊天室名稱" maxlength="50" aria-label="輸入聊天室名稱">
+        <input type="text" id="room-name" placeholder="聊天室名稱" maxlength="50" aria-label="輸入聊天室名稱" required>
         <button id="join-room" aria-label="加入或建立聊天室">加入 / 建立聊天室</button>
       </div>
-
-      <!-- 聊天訊息 -->
       <div class="chat-container">
         <div id="chat-box" class="chat-box" role="log" aria-live="polite"></div>
         <div class="message-input-wrapper">
-          <p id="typing-indicator"></p>
+          <div class="message-input-indicator" role="status">
+            <p id="typing-indicator"></p>
+          </div>
           <div class="message-input-container">
-            <textarea id="message-input" placeholder="輸入訊息..." maxlength="500" aria-label="輸入聊天訊息"></textarea>
+            <textarea id="message-input" placeholder="輸入訊息..." maxlength="1000" aria-label="輸入聊天訊息" required></textarea>
             <button id="send-btn" aria-label="送出訊息">送出</button>
           </div>
         </div>
-        <div id="presence-list" class="presence-list">
-          <h3>🟢 在線使用者</h3>
+        <div id="presence-list" class="presence-list" role="region" aria-labelledby="presence-title">
+          <h3 id="presence-title">🟢 在線使用者</h3>
         </div>
       </div>
-      <footer>© 2025 Chat Lite. 保留一切權利。</footer>
+      <footer role="contentinfo">© 2025 Chat Lite 旗艦版. 保留一切權利. <a href="/privacy.html" target="_blank">隱私政策</a></footer>
     </div>
   </div>
-  <script type="module" src="/chat-beta/main.js"></script>
+  <script type="module" src="/chat-beta/main.js" defer></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging.js"></script>
 </body>
 </html>
