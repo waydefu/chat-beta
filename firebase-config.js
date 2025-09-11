@@ -14,6 +14,11 @@ appId: "1:838739455782:web:e7538f588ae374d204dbe7",
 databaseURL: "https://f-chat-wayde-fu-default-rtdb.firebaseio.com"
 };
 
+if (!firebaseConfig.messagingSenderId) {
+  console.error('Missing messagingSenderId in firebaseConfig');
+  throw new Error('Firebase configuration incomplete');
+}
+
 const app = initializeApp(firebaseConfig);
 console.log('Firebase app initialized:', app.name);
 const auth = getAuth(app);
@@ -22,4 +27,4 @@ const firestore = getFirestore(app);
 const rtdb = getDatabase(app);
 const messaging = getMessaging(app);
 
-export { auth, provider, firestore, rtdb, app, messaging }; 
+export { auth, provider, firestore, rtdb, app, messaging };
