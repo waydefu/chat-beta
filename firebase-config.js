@@ -3,6 +3,7 @@ import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/fireba
 import { getAuth, GoogleAuthProvider } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
 import { getFirestore } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
 import { getDatabase } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js';
+import { getMessaging } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging.js';
 
 // 硬編碼 Firebase 配置
 const firebaseConfig = {
@@ -14,9 +15,11 @@ databaseURL: "https://f-chat-wayde-fu-default-rtdb.firebaseio.com"
 };
 
 const app = initializeApp(firebaseConfig);
+console.log('Firebase app initialized:', app.name);
 const auth = getAuth(app);
 const provider = new GoogleAuthProvider();
 const firestore = getFirestore(app);
 const rtdb = getDatabase(app);
+const messaging = getMessaging(app);
 
-export { auth, provider, firestore, rtdb, app }; 
+export { auth, provider, firestore, rtdb, app, messaging };
