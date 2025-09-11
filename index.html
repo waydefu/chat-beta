@@ -10,43 +10,43 @@
 </head>
 <body>
   <div class="login-wrapper" role="main">
-    <div class="login-card auth-section" id="login-card" role="region" aria-labelledby="login-title">
-      <img src="/chat-beta/image/logo.png" alt="Chat Lite 旗艦版標誌" class="avatar-placeholder-img">
-      <h1 id="login-title" class="title">歡迎來到 <strong>Chat Lite 旗艦版</strong></h1>
-      <p class="subtitle" id="user-info" role="status"></p>
-      <button id="login-btn" class="google-btn login-btn" aria-label="使用 Google 帳戶登入">使用 Google 登入</button>
-      <p class="terms">登入即表示您同意我們的<a href="/terms.html" target="_blank">服務條款</a>。</p>
+    <div class="login-card auth-section" id="login-card">
+      <img src="/chat-beta/image/logo.png" alt="Chat Lite 標誌" class="avatar-placeholder-img">
+      <h1 class="title">歡迎來到 Chat Lite 旗艦版</h1>
+      <p id="user-info" class="subtitle"></p>
+      <button id="login-btn" class="google-btn" aria-label="使用 Google 登入">使用 Google 登入</button>
+      <p class="terms">登入即同意<a href="/terms.html" target="_blank">服務條款</a>。</p>
     </div>
-    <div id="chat-section" class="chat-section" style="display:none;" role="region" aria-labelledby="chat-title">
+    <div id="chat-section" class="chat-section" style="display:none;">
       <header>
-        <button id="logout-btn" class="google-btn" style="display:none; margin-bottom: 10px;" aria-label="登出">登出</button>
-        <h2 id="chat-title" class="chat-title">聊天室</h2>
+        <button id="logout-btn" class="google-btn" style="display:none;">登出</button>
+        <h2 class="chat-title">聊天室</h2>
       </header>
-      <div id="room-list-section" class="room-section" role="navigation">
-        <select id="room-list" aria-label="選擇聊天室" aria-controls="chat-box">
+      <div class="room-section">
+        <select id="room-list" aria-label="選擇聊天室">
           <option disabled selected>選擇聊天室</option>
         </select>
       </div>
       <div class="room-section">
-        <input type="text" id="room-name" placeholder="聊天室名稱" maxlength="50" aria-label="輸入聊天室名稱" required>
-        <button id="join-room" aria-label="加入或建立聊天室">加入 / 建立聊天室</button>
+        <input type="text" id="room-name" placeholder="聊天室名稱" maxlength="50" aria-label="輸入聊天室名稱">
+        <button id="join-room" aria-label="加入聊天室">加入 / 建立</button>
       </div>
       <div class="chat-container">
         <div id="chat-box" class="chat-box" role="log" aria-live="polite"></div>
         <div class="message-input-wrapper">
-          <div class="message-input-indicator" role="status">
+          <div class="message-input-indicator">
             <p id="typing-indicator"></p>
           </div>
           <div class="message-input-container">
-            <textarea id="message-input" placeholder="輸入訊息..." maxlength="1000" aria-label="輸入聊天訊息" required></textarea>
+            <textarea id="message-input" placeholder="輸入訊息..." maxlength="1000" aria-label="輸入訊息"></textarea>
             <button id="send-btn" aria-label="送出訊息">送出</button>
           </div>
         </div>
-        <div id="presence-list" class="presence-list" role="region" aria-labelledby="presence-title">
-          <h3 id="presence-title">🟢 在線使用者</h3>
+        <div id="presence-list" class="presence-list">
+          <h3>🟢 在線使用者</h3>
         </div>
       </div>
-      <footer role="contentinfo">© 2025 Chat Lite 旗艦版. 保留一切權利. <a href="/privacy.html" target="_blank">隱私政策</a></footer>
+      <footer>© 2025 Chat Lite. <a href="/privacy.html" target="_blank">隱私政策</a></footer>
     </div>
   </div>
   <script type="module" src="/chat-beta/main.js" defer></script>
