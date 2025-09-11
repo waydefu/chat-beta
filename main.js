@@ -1,143 +1,338 @@
 // main.js
-import { auth, provider, firestore, rtdb } from './firebase-config.js';
-import { signInWithPopup, signOut, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
-import { collection, addDoc, onSnapshot, query, orderBy, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
-import { ref, set, onValue, remove } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js';
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
+import { getAuth, GoogleAuthProvider, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
+import { getFirestore, collection, addDoc, onSnapshot, orderBy, query, serverTimestamp, setDoc, doc, updateDoc, arrayUnion, getDoc, deleteDoc } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+import { getDatabase, ref, onValue, onDisconnect, set } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js';
+import { getMessaging, getToken, onMessage } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging.js';
 
-// --- DOM 元素 ---
+const firebaseConfig = {
+  apiKey: "YOUR_API_KEY",
+  authDomain: "YOUR_AUTH_DOMAIN",
+  projectId: "YOUR_PROJECT_ID",
+  storageBucket: "YOUR_STORAGE_BUCKET",
+  messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
+  appId: "YOUR_APP_ID",
+  databaseURL: "YOUR_DATABASE_URL"
+};
+
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const provider = new GoogleAuthProvider();
+const firestore = getFirestore(app);
+const rtdb = getDatabase(app);
+const messaging = getMessaging(app);
+
 const loginBtn = document.getElementById('login-btn');
 const logoutBtn = document.getElementById('logout-btn');
-const loginCard = document.getElementById('login-card');
-const chatSection = document.getElementById('chat-section');
 const userInfo = document.getElementById('user-info');
-
-const roomList = document.getElementById('room-list');
-const roomNameInput = document.getElementById('room-name');
-const joinRoomBtn = document.getElementById('join-room');
-
+const chatSection = document.getElementById('chat-section');
+const loginCard = document.getElementById('login-card');
 const chatBox = document.getElementById('chat-box');
 const messageInput = document.getElementById('message-input');
 const sendBtn = document.getElementById('send-btn');
+const roomInput = document.getElementById('room-name');
+const joinRoomBtn = document.getElementById('join-room');
 const presenceList = document.getElementById('presence-list');
+const roomList = document.getElementById('room-list');
+const typingIndicator = document.getElementById('typing-indicator');
 
-let currentUser = null;
-let currentRoom = null;
+let currentRoom = '';
+let unsubscribe = null;
+const userNameCache = new Map();
+let messageEditState = null;
 
-// --- 登入 / 登出 ---
-loginBtn.addEventListener('click', async () => {
+function sanitizeInput(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+async function getUserDisplayName(uid) {
+  if (userNameCache.has(uid)) return userNameCache.get(uid);
+  const userDoc = await getDoc(doc(firestore, 'users', uid));
+  const displayName = userDoc.exists() ? userDoc.data().displayName : '未知使用者';
+  userNameCache.set(uid, displayName);
+  return displayName;
+}
+
+async function appendMessage(msg, uid) {
+  let time = '未知時間';
   try {
-    const result = await signInWithPopup(auth, provider);
-    currentUser = result.user;
-    setupUI();
-  } catch (error) {
-    console.error('登入失敗：', error);
+    if (msg.timestamp && typeof msg.timestamp.toDate === 'function') {
+      time = msg.timestamp.toDate().toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' });
+    }
+  } catch (e) {
+    time = '未知時間';
   }
+
+  const side = msg.uid === uid ? 'you' : 'other';
+  let readByText = '';
+  let isReadByMe = false;
+
+  if (msg.readBy && Array.isArray(msg.readBy) && msg.readBy.length > 0) {
+    const readByNames = await Promise.all(msg.readBy.map(getUserDisplayName));
+    readByText = `已讀：${readByNames.join('、')}`;
+    isReadByMe = msg.readBy.includes(uid);
+  }
+
+  const row = document.createElement('div');
+  row.className = `message-row ${side}`;
+  row.setAttribute('data-msg-id', msg.id);
+
+  const avatarText = document.createElement('div');
+  avatarText.className = 'avatar-text';
+  avatarText.textContent = msg.user ? msg.user[0].toUpperCase() : '?';
+
+  const bubble = document.createElement('div');
+  bubble.className = `message ${side}`;
+  bubble.setAttribute('data-msg-id', msg.id);
+  bubble.innerHTML = `
+    <span class="message-text">${sanitizeInput(msg.text)}</span>
+    <span class="message-time">${time}</span>
+    <span class="read-status" title="${readByText}">${isReadByMe ? '✔' : ''}</span>
+    ${msg.uid === uid ? '<div class="message-actions"><button class="edit-btn">編輯</button><button class="delete-btn">刪除</button></div>' : ''}
+  `;
+
+  if (side === 'you') {
+    row.appendChild(bubble);
+    row.appendChild(avatarText);
+  } else {
+    row.appendChild(avatarText);
+    row.appendChild(bubble);
+  }
+
+  chatBox.appendChild(row);
+  chatBox.scrollTop = chatBox.scrollHeight;
+
+  if (msg.uid === uid) {
+    bubble.querySelector('.edit-btn')?.addEventListener('click', () => editMessage(msg.id, msg.text));
+    bubble.querySelector('.delete-btn')?.addEventListener('click', () => deleteMessage(msg.id));
+  }
+}
+
+async function markMessageAsRead(msgId, uid) {
+  const msgRef = doc(firestore, 'rooms', currentRoom, 'messages', msgId);
+  await updateDoc(msgRef, { readBy: arrayUnion(uid) });
+}
+
+function editMessage(msgId, originalText) {
+  messageEditState = { msgId, originalText };
+  messageInput.value = originalText;
+  messageInput.focus();
+  sendBtn.textContent = '更新';
+}
+
+async function deleteMessage(msgId) {
+  if (confirm('確定刪除此訊息？')) {
+    const msgRef = doc(firestore, 'rooms', currentRoom, 'messages', msgId);
+    await deleteDoc(msgRef);
+  }
+}
+
+loginBtn.onclick = async () => {
+  try {
+    await signInWithPopup(auth, provider);
+    requestNotificationPermission();
+  } catch (e) {
+    alert(`登入失敗：${e.message}`);
+  }
+};
+
+logoutBtn.onclick = async () => {
+  try {
+    await signOut(auth);
+  } catch (e) {
+    alert('無法登出，請稍後重試');
+  }
+};
+
+async function requestNotificationPermission() {
+  if (Notification.permission === 'granted') {
+    await getFCMToken();
+  } else if (Notification.permission !== 'denied') {
+    const permission = await Notification.requestPermission();
+    if (permission === 'granted') await getFCMToken();
+  }
+}
+
+async function getFCMToken() {
+  const token = await getToken(messaging, { vapidKey: 'YOUR_VAPID_KEY' });
+  if (token) {
+    const user = auth.currentUser;
+    if (user) await setDoc(doc(firestore, 'users', user.uid), { fcmToken: token }, { merge: true });
+  }
+}
+
+onMessage(messaging, payload => {
+  alert(`新訊息：${payload.notification?.body || '收到通知'}`);
 });
 
-logoutBtn.addEventListener('click', async () => {
-  await signOut(auth);
-  currentUser = null;
-  currentRoom = null;
-  loginCard.style.display = 'block';
-  chatSection.style.display = 'none';
-  logoutBtn.style.display = 'none';
-  userInfo.textContent = '';
-  chatBox.innerHTML = '';
-  presenceList.innerHTML = '<h3>🟢 在線使用者</h3><div>無在線使用者</div>';
-});
-
-// 確保刷新後仍維持登入狀態
 onAuthStateChanged(auth, user => {
   if (user) {
-    currentUser = user;
-    setupUI();
+    userInfo.textContent = `👋 ${user.displayName}`;
+    loginCard.style.display = 'none';
+    chatSection.style.display = 'flex';
+    logoutBtn.style.display = 'inline-block';
+    loginBtn.style.display = 'none';
+    chatBox.setAttribute('role', 'log');
+    chatBox.setAttribute('aria-live', 'polite');
+    setDoc(doc(firestore, 'users', user.uid), { displayName: user.displayName || '匿名使用者' }, { merge: true });
+    setupPresence(user);
+    watchPresence();
+    watchRoomList();
+    requestNotificationPermission();
+  } else {
+    userInfo.textContent = '';
+    loginCard.style.display = 'block';
+    chatSection.style.display = 'none';
+    logoutBtn.style.display = 'none';
+    loginBtn.style.display = 'inline-block';
+    presenceList.innerHTML = '<h3>🟢 在線使用者</h3><div>無在線使用者</div>';
+    chatBox.innerHTML = '';
+    roomList.innerHTML = '<option disabled selected>選擇聊天室</option>';
+    typingIndicator.textContent = '';
+    if (unsubscribe) unsubscribe();
+    userNameCache.clear();
+    messageEditState = null;
   }
 });
 
-function setupUI() {
-  loginCard.style.display = 'none';
-  chatSection.style.display = 'block';
-  logoutBtn.style.display = 'block';
-  userInfo.textContent = `已登入：${currentUser.displayName}`;
+joinRoomBtn.onclick = async () => {
+  try {
+    const room = roomInput.value.trim();
+    if (!room) return alert('請輸入聊天室名稱');
+
+    joinRoomBtn.disabled = true;
+    joinRoomBtn.textContent = '載入中...';
+
+    currentRoom = room;
+    if (unsubscribe) unsubscribe();
+
+    await setDoc(doc(firestore, 'rooms', room), { createdAt: serverTimestamp() }, { merge: true });
+
+    const msgsRef = collection(firestore, 'rooms', currentRoom, 'messages');
+    const q = query(msgsRef, orderBy('timestamp'));
+
+    unsubscribe = onSnapshot(q, snap => {
+      const uid = auth.currentUser?.uid;
+      snap.docChanges().forEach(async change => {
+        const msg = { id: change.doc.id, ...change.doc.data() };
+        if (change.type === 'added') {
+          await appendMessage(msg, uid);
+          if (msg.uid !== uid && (!msg.readBy || !msg.readBy.includes(uid))) {
+            await markMessageAsRead(msg.id, uid);
+          }
+        } else if (change.type === 'removed') {
+          chatBox.querySelector(`[data-msg-id="${msg.id}"]`)?.remove();
+        }
+      });
+    });
+
+    watchTyping();
+  } catch (e) {
+    alert(`加入聊天室失敗：${e.message}`);
+  } finally {
+    joinRoomBtn.disabled = false;
+    joinRoomBtn.textContent = '加入 / 建立聊天室';
+  }
+};
+
+function watchRoomList() {
+  const roomsRef = collection(firestore, 'rooms');
+  onSnapshot(roomsRef, snap => {
+    roomList.innerHTML = '<option disabled selected>選擇聊天室</option>';
+    snap.forEach(doc => {
+      const opt = document.createElement('option');
+      opt.value = doc.id;
+      opt.textContent = doc.id;
+      roomList.appendChild(opt);
+    });
+  });
 }
 
-// --- 聊天室管理 ---
-joinRoomBtn.addEventListener('click', () => {
-  const roomName = roomNameInput.value.trim();
-  if (!roomName) return alert('請輸入聊天室名稱');
-  joinRoom(roomName);
-});
+roomList.onchange = () => {
+  roomInput.value = roomList.value;
+  joinRoomBtn.click();
+};
 
-function joinRoom(name) {
-  currentRoom = name;
-  chatBox.innerHTML = '';
-  listenMessages(name);
-  setupPresence(name);
-}
+sendBtn.onclick = async () => {
+  try {
+    const text = messageInput.value.trim();
+    const user = auth.currentUser;
+    if (!text || !user || !currentRoom) return;
 
-// --- 訊息 ---
-sendBtn.addEventListener('click', sendMessage);
+    if (messageEditState) {
+      const msgRef = doc(firestore, 'rooms', currentRoom, 'messages', messageEditState.msgId);
+      await updateDoc(msgRef, { text, timestamp: serverTimestamp() });
+      messageEditState = null;
+      sendBtn.textContent = '送出';
+    } else {
+      await addDoc(collection(firestore, 'rooms', currentRoom, 'messages'), {
+        user: user.displayName,
+        uid: user.uid,
+        text,
+        timestamp: serverTimestamp(),
+        readBy: [user.uid]
+      });
+    }
+    messageInput.value = '';
+    messageInput.style.height = 'auto';
+  } catch (e) {
+    alert('操作失敗，請稍後重試');
+  }
+};
+
 messageInput.addEventListener('keypress', e => {
   if (e.key === 'Enter' && !e.shiftKey) {
     e.preventDefault();
-    sendMessage();
+    sendBtn.click();
   }
 });
 
-async function sendMessage() {
-  if (!currentRoom || !messageInput.value.trim()) return;
-  try {
-    await addDoc(collection(firestore, 'rooms', currentRoom, 'messages'), {
-      uid: currentUser.uid,
-      name: currentUser.displayName,
-      text: messageInput.value.trim(),
-      timestamp: serverTimestamp()
-    });
-    messageInput.value = '';
-  } catch (error) {
-    console.error('發送訊息失敗：', error);
-  }
+function setupPresence(user) {
+  const userRef = ref(rtdb, 'presence/' + user.uid);
+  onDisconnect(userRef).set({ state: 'offline', displayName: user.displayName || '匿名使用者', last_changed: serverTimestamp() });
+  set(userRef, { state: 'online', displayName: user.displayName || '匿名使用者', last_changed: serverTimestamp() });
 }
 
-// --- 監聽訊息 ---
-function listenMessages(room) {
-  const q = query(collection(firestore, 'rooms', room, 'messages'), orderBy('timestamp'));
-  onSnapshot(q, snapshot => {
-    chatBox.innerHTML = '';
-    snapshot.forEach(doc => {
-      const data = doc.data();
-      const div = document.createElement('div');
-      div.className = `message-row ${data.uid === currentUser.uid ? 'you' : 'other'}`;
-      div.innerHTML = `
-        <div class="avatar-text">${(data.name || '?')[0]}</div>
-        <div class="message ${data.uid === currentUser.uid ? 'you' : 'other'}">
-          <span class="message-text">${data.text}</span>
-        </div>`;
-      chatBox.appendChild(div);
-    });
-    chatBox.scrollTop = chatBox.scrollHeight;
-  });
-}
-
-// --- 在線狀態 ---
-function setupPresence(room) {
-  const userRef = ref(rtdb, `presence/${room}/${currentUser.uid}`);
-  set(userRef, currentUser.displayName);
-  window.addEventListener('beforeunload', () => remove(userRef));
-
-  const roomRef = ref(rtdb, `presence/${room}`);
-  onValue(roomRef, snapshot => {
-    const users = snapshot.val() || {};
+function watchPresence() {
+  const allRef = ref(rtdb, 'presence');
+  onValue(allRef, snap => {
+    const users = snap.val() || {};
     presenceList.innerHTML = '<h3>🟢 在線使用者</h3>';
-    const userArray = Object.values(users);
-    if (userArray.length === 0) {
-      presenceList.innerHTML += '<div>無在線使用者</div>';
-    } else {
-      userArray.forEach(u => {
-        const div = document.createElement('div');
-        div.textContent = u;
-        presenceList.appendChild(div);
-      });
-    }
+    const onlineUsers = Object.values(users).filter(u => u?.state === 'online');
+    presenceList.innerHTML += onlineUsers.length ? onlineUsers.map(u => `<div>${u.displayName || '匿名使用者'}</div>`).join('') : '<div>無在線使用者</div>';
   });
 }
+
+function watchTyping() {
+  if (!currentRoom) return;
+  const typingRef = ref(rtdb, `typing/${currentRoom}`);
+  onValue(typingRef, snap => {
+    const data = snap.val() || {};
+    const othersTyping = Object.values(data)
+      .filter(u => u && u.name !== auth.currentUser?.displayName)
+      .map(u => u.name);
+    typingIndicator.textContent = othersTyping.length ? `${othersTyping.join('、')} 正在輸入...` : '';
+  });
+}
+
+let typingTimeout;
+function debounceTyping() {
+  const user = auth.currentUser;
+  if (!user || !currentRoom) return;
+
+  const typingRef = ref(rtdb, `typing/${currentRoom}/${user.uid}`);
+  clearTimeout(typingTimeout);
+  if (!typingTimeout) set(typingRef, { name: user.displayName });
+  typingTimeout = setTimeout(() => {
+    set(typingRef, null);
+    typingTimeout = null;
+  }, 2000);
+}
+
+messageInput.addEventListener('input', debounceTyping);
+messageInput.addEventListener('input', () => {
+  messageInput.style.height = 'auto';
+  messageInput.style.height = `${messageInput.scrollHeight}px`;
+});
