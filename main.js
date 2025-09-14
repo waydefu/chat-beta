@@ -32,9 +32,12 @@ const joinRoomBtn = document.getElementById('join-room');
 const presenceList = document.getElementById('presence-list');
 const roomList = document.getElementById('room-list');
 const typingIndicator = document.getElementById('typing-indicator');
+const roomSelectBtn = document.getElementById('room-select-btn');
+const roomOptions = document.getElementById('room-list-options');
 
 let currentRoom = '';
 let unsubscribe = null;
+let joinDebounce = null; // 防重複加入
 const userNameCache = new Map();
 let messageEditState = null;
 
@@ -60,13 +63,10 @@ async function appendMessage(msg, uid) {
     } else if (msg.uid === uid) {
       // 自己發送的消息，使用本地時間即時顯示
       time = new Date().toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' });
-    } else {
-      // 其他人的消息，如果時間戳無效，使用本地時間作為備用
-      time = new Date().toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' });
     }
   } catch (error) {
     console.error('時間戳解析失敗：', msg.id, error);
-    time = new Date().toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' }); // 最終備用
+    time = new Date().toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' });
   }
 
   const side = msg.uid === uid ? 'you' : 'other';
@@ -173,11 +173,18 @@ onAuthStateChanged(auth, user => {
   }
 });
 
+// === 聊天室管理（防重複加入） ===
 joinRoomBtn.onclick = async () => {
-  try {
-    const room = roomInput.value.trim();
-    if (!room) return alert('請輸入聊天室名稱');
+  const room = roomInput.value.trim();
+  if (!room) return alert('請輸入聊天室名稱');
 
+  // 防重複：檢查是否已加入相同聊天室
+  if (currentRoom === room) {
+    console.log('已加入此聊天室，忽略重複請求');
+    return;
+  }
+
+  try {
     joinRoomBtn.disabled = true;
     joinRoomBtn.textContent = '載入中...';
 
@@ -195,7 +202,6 @@ joinRoomBtn.onclick = async () => {
           await appendMessage(msg, uid);
           if (msg.uid !== uid && !msg.readBy?.includes(uid)) await markMessageAsRead(msg.id, uid);
         } else if (change.type === 'modified') {
-          // 更新時間戳或 readBy 時重新渲染
           const existingRow = chatBox.querySelector(`[data-msg-id="${msg.id}"]`);
           if (existingRow) {
             existingRow.remove();
