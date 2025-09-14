@@ -11,7 +11,6 @@ projectId: "f-chat-wayde-fu",
 appId: "1:838739455782:web:e7538f588ae374d204dbe7",
 databaseURL: "https://f-chat-wayde-fu-default-rtdb.firebaseio.com"
 };
-
 const app = initializeApp(firebaseConfig);
 console.log('Firebase initialized:', app.name);
 const auth = getAuth(app);
@@ -32,12 +31,9 @@ const joinRoomBtn = document.getElementById('join-room');
 const presenceList = document.getElementById('presence-list');
 const roomList = document.getElementById('room-list');
 const typingIndicator = document.getElementById('typing-indicator');
-const roomSelectBtn = document.getElementById('room-select-btn');
-const roomOptions = document.getElementById('room-list-options');
 
 let currentRoom = '';
 let unsubscribe = null;
-let joinDebounce = null; // 防重複加入
 const userNameCache = new Map();
 let messageEditState = null;
 
@@ -146,34 +142,35 @@ logoutBtn.onclick = async () => {
   }
 };
 
-onAuthStateChanged(auth, user => {
-  if (user) {
-    userInfo.textContent = `👋 ${user.displayName}`;
-    loginCard.style.display = 'none';
-    chatSection.style.display = 'flex';
-    logoutBtn.style.display = 'inline-block';
-    loginBtn.style.display = 'none';
-    setDoc(doc(firestore, 'users', user.uid), { displayName: user.displayName || '匿名' }, { merge: true });
-    setupPresence(user);
-    watchPresence();
-    watchRoomList();
-  } else {
-    userInfo.textContent = '';
-    loginCard.style.display = 'block';
-    chatSection.style.display = 'none';
-    logoutBtn.style.display = 'none';
-    loginBtn.style.display = 'inline-block';
-    presenceList.innerHTML = '<h3>🟢 在線使用者</h3><div>無在線</div>';
-    chatBox.innerHTML = '';
-    roomList.innerHTML = '<option disabled selected>選擇聊天室</option>';
-    typingIndicator.textContent = '';
-    if (unsubscribe) unsubscribe();
-    userNameCache.clear();
-    messageEditState = null;
-  }
+document.addEventListener('DOMContentLoaded', () => {
+  onAuthStateChanged(auth, user => {
+    if (user) {
+      userInfo.textContent = `👋 ${user.displayName}`;
+      loginCard.style.display = 'none';
+      chatSection.style.display = 'flex';
+      logoutBtn.style.display = 'inline-block';
+      loginBtn.style.display = 'none';
+      setDoc(doc(firestore, 'users', user.uid), { displayName: user.displayName || '匿名' }, { merge: true });
+      setupPresence(user);
+      watchPresence();
+      watchRoomList();
+    } else {
+      userInfo.textContent = '';
+      loginCard.style.display = 'block';
+      chatSection.style.display = 'none';
+      logoutBtn.style.display = 'none';
+      loginBtn.style.display = 'inline-block';
+      presenceList.innerHTML = '<h3>🟢 在線使用者</h3><div>無在線</div>';
+      chatBox.innerHTML = '';
+      roomList.innerHTML = '<option disabled selected>選擇聊天室</option>';
+      typingIndicator.textContent = '';
+      if (unsubscribe) unsubscribe();
+      userNameCache.clear();
+      messageEditState = null;
+    }
+  });
 });
 
-// === 聊天室管理（防重複加入） ===
 joinRoomBtn.onclick = async () => {
   const room = roomInput.value.trim();
   if (!room) return alert('請輸入聊天室名稱');
