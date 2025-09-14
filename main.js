@@ -3,7 +3,6 @@ import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/fireba
 import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
 import { getFirestore, collection, addDoc, onSnapshot, orderBy, query, serverTimestamp, setDoc, doc, updateDoc, arrayUnion, deleteDoc, getDoc } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
 import { getDatabase, ref, onValue, onDisconnect, set as dbSet } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js';
-import { getMessaging, getToken, onMessage } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging.js';
 
 // 硬編碼 Firebase 配置
 const firebaseConfig = {
@@ -25,7 +24,6 @@ const auth = getAuth(app);
 const provider = new GoogleAuthProvider();
 const firestore = getFirestore(app);
 const rtdb = getDatabase(app);
-const messaging = getMessaging(app);
 
 const loginBtn = document.getElementById('login-btn');
 const logoutBtn = document.getElementById('logout-btn');
@@ -127,7 +125,6 @@ loginBtn.onclick = async () => {
     console.log('Attempting Google login...');
     const result = await signInWithPopup(auth, provider);
     console.log('Login successful:', result.user);
-    requestNotificationPermission();
   } catch (e) {
     console.error('Login failed:', e.message);
     alert(`登入失敗：${e.message}`);
@@ -142,30 +139,6 @@ logoutBtn.onclick = async () => {
   }
 };
 
-async function requestNotificationPermission() {
-  if (Notification.permission === 'granted') await getFCMToken();
-  else if (Notification.permission !== 'denied') {
-    const permission = await Notification.requestPermission();
-    if (permission === 'granted') await getFCMToken();
-  }
-}
-
-async function getFCMToken() {
-  try {
-    const token = await getToken(messaging, { vapidKey: 'YOUR_VAPID_KEY' }); // 替換為實際 VAPID 密鑰
-    if (token) {
-      const user = auth.currentUser;
-      if (user) await setDoc(doc(firestore, 'users', user.uid), { fcmToken: token }, { merge: true });
-    }
-  } catch (e) {
-    console.error('FCM Token error:', e.message);
-  }
-}
-
-onMessage(messaging, payload => {
-  alert(`新訊息：${payload.notification?.body || '收到通知'}`);
-});
-
 onAuthStateChanged(auth, user => {
   if (user) {
     userInfo.textContent = `👋 ${user.displayName}`;
@@ -177,7 +150,6 @@ onAuthStateChanged(auth, user => {
     setupPresence(user);
     watchPresence();
     watchRoomList();
-    requestNotificationPermission();
   } else {
     userInfo.textContent = '';
     loginCard.style.display = 'block';
