@@ -54,11 +54,24 @@ async function getUserDisplayName(uid) {
 
 async function appendMessage(msg, uid) {
   let time = '未知時間';
-  if (msg.timestamp?.toDate) time = msg.timestamp.toDate().toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' });
+  try {
+    if (msg.timestamp && typeof msg.timestamp.toDate === 'function') {
+      time = msg.timestamp.toDate().toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' });
+    } else if (msg.uid === uid) {
+      // 自己發送的消息，使用本地時間即時顯示
+      time = new Date().toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' });
+    } else {
+      // 其他人的消息，如果時間戳無效，使用本地時間作為備用
+      time = new Date().toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' });
+    }
+  } catch (error) {
+    console.error('時間戳解析失敗：', msg.id, error);
+    time = new Date().toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' }); // 最終備用
+  }
 
   const side = msg.uid === uid ? 'you' : 'other';
   let readByText = '', isReadByMe = false;
-  if (msg.readBy?.length) {
+  if (msg.readBy && Array.isArray(msg.readBy) && msg.readBy.length > 0) {
     const readByNames = await Promise.all(msg.readBy.map(getUserDisplayName));
     readByText = `已讀：${readByNames.join('、')}`;
     isReadByMe = msg.readBy.includes(uid);
@@ -70,7 +83,7 @@ async function appendMessage(msg, uid) {
 
   const avatarText = document.createElement('div');
   avatarText.className = 'avatar-text';
-  avatarText.textContent = msg.user?.[0].toUpperCase() || '?';
+  avatarText.textContent = msg.user ? msg.user[0].toUpperCase() : '?';
 
   const bubble = document.createElement('div');
   bubble.className = `message ${side}`;
@@ -181,6 +194,13 @@ joinRoomBtn.onclick = async () => {
         if (change.type === 'added') {
           await appendMessage(msg, uid);
           if (msg.uid !== uid && !msg.readBy?.includes(uid)) await markMessageAsRead(msg.id, uid);
+        } else if (change.type === 'modified') {
+          // 更新時間戳或 readBy 時重新渲染
+          const existingRow = chatBox.querySelector(`[data-msg-id="${msg.id}"]`);
+          if (existingRow) {
+            existingRow.remove();
+            await appendMessage(msg, uid);
+          }
         } else if (change.type === 'removed') {
           chatBox.querySelector(`[data-msg-id="${msg.id}"]`)?.remove();
         }
