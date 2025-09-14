@@ -1,4 +1,4 @@
-<!DOCTYPE html> 
+<!DOCTYPE html>
 <html lang="zh-TW">
 <head>
   <meta charset="UTF-8">
@@ -22,9 +22,15 @@
         <h2 class="chat-title">聊天室</h2>
       </header>
       <div class="room-section">
-        <select id="room-list" aria-label="選擇聊天室">
-          <option disabled selected>選擇聊天室</option>
-        </select>
+        <div class="custom-select" id="room-list-wrapper">
+          <button class="select-btn" id="room-select-btn">
+            <span class="select-text">選擇聊天室</span>
+            <span class="select-icon">▼</span>
+          </button>
+          <ul class="select-options" id="room-list-options" style="display:none;">
+            <li data-room="" class="option disabled selected">選擇聊天室</li>
+          </ul>
+        </div>
       </div>
       <div class="room-section">
         <input type="text" id="room-name" placeholder="聊天室名稱" maxlength="50" aria-label="輸入聊天室名稱">
