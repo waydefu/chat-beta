@@ -22,7 +22,7 @@ const roomSelectWrapper = document.getElementById('room-list-wrapper');
 const roomSelectBtn = document.getElementById('room-select-btn');
 const roomSelectText = roomSelectBtn.querySelector('.select-text');
 const roomListOptions = document.getElementById('room-list-options');
-
+ 
 // --- 變數 ---
 let currentRoom = '';
 let unsubscribe = null;
