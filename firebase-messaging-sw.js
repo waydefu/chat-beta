@@ -6,7 +6,7 @@ const ASSETS_TO_CACHE = [
   '/chat-beta/main.js',
   '/chat-beta/firebase-config.js',
   '/chat-beta/image/favicon.png',
-  '/chat-beta/image/logo.png',
+  '/chat-beta/image/logo.png', 
   '/chat-beta/image/背景.png'
 ];
 
