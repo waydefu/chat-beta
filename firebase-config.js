@@ -4,7 +4,7 @@ import { getFirestore } from 'https://www.gstatic.com/firebasejs/10.12.0/firebas
 import { getDatabase } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js';
 
 const firebaseConfig = {
-  apiKey: "AIzaSyDOyp-qGQxiiBi9WC_43YFGt94kUZn7goI",
+  apiKey: "AIzaSyDOyp-qGQxiiBi9WC_43YFGt94kUZn7goI", 
   authDomain: "f-chat-wayde-fu.firebaseapp.com",
   projectId: "f-chat-wayde-fu",
   appId: "1:838739455782:web:e7538f588ae374d204dbe7",
