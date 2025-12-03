@@ -1,344 +1,314 @@
-/* --- 全局設定 --- */
-body {
-  background: url('/chat-beta/image/背景.png') no-repeat center center fixed;
-  background-size: cover;
-  font-family: 'Segoe UI', 'Microsoft JhengHei', sans-serif;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  min-height: 100vh;
-  color: #333;
-  backdrop-filter: blur(3px);
+import { signInWithPopup, signOut, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
+import { collection, addDoc, onSnapshot, orderBy, query, serverTimestamp, setDoc, doc, updateDoc, arrayUnion, deleteDoc, getDoc } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+import { ref, onValue, onDisconnect, set as dbSet } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js';
+import { auth, provider, firestore, rtdb } from './firebase-config.js';
+
+// --- DOM 元素 ---
+const loginBtn = document.getElementById('login-btn');
+const logoutBtn = document.getElementById('logout-btn');
+const userInfo = document.getElementById('user-info');
+const chatSection = document.getElementById('chat-section');
+const loginCard = document.getElementById('login-card');
+const chatBox = document.getElementById('chat-box');
+const messageInput = document.getElementById('message-input');
+const sendBtn = document.getElementById('send-btn');
+const roomInput = document.getElementById('room-name');
+const joinRoomBtn = document.getElementById('join-room');
+const presenceList = document.getElementById('presence-list');
+const typingIndicator = document.getElementById('typing-indicator');
+
+// 自定義選單 DOM
+const roomSelectWrapper = document.getElementById('room-list-wrapper');
+const roomSelectBtn = document.getElementById('room-select-btn');
+const roomSelectText = roomSelectBtn.querySelector('.select-text');
+const roomListOptions = document.getElementById('room-list-options');
+
+// --- 變數 ---
+let currentRoom = '';
+let unsubscribe = null;
+const userNameCache = new Map();
+let messageEditState = null;
+let typingTimeout;
+
+// --- 工具函數 ---
+function sanitizeInput(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML.replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
-.login-wrapper {
-  width: 100%;
-  max-width: 1000px;
-  height: 90vh;
-  display: flex;
-  flex-direction: column;
+async function getUserDisplayName(uid) {
+  if (userNameCache.has(uid)) return userNameCache.get(uid);
+  try {
+    const userDoc = await getDoc(doc(firestore, 'users', uid));
+    const displayName = userDoc.exists() ? userDoc.data().displayName : '未知使用者';
+    userNameCache.set(uid, displayName);
+    return displayName;
+  } catch (e) {
+    return '未知使用者';
+  }
 }
 
-/* --- 登入卡片 --- */
-.login-card {
-  background: rgba(255, 255, 255, 0.95);
-  padding: 40px;
-  border-radius: 16px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
-  text-align: center;
-  max-width: 400px;
-  margin: auto;
-  border: 1px solid rgba(255, 255, 255, 0.5);
+// --- 訊息 UI ---
+async function appendMessage(msg, uid) {
+  let time = new Date().toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' });
+  try {
+    if (msg.timestamp && typeof msg.timestamp.toDate === 'function') {
+      time = msg.timestamp.toDate().toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' });
+    }
+  } catch (error) {}
+
+  const side = msg.uid === uid ? 'you' : 'other';
+  let readByText = '', isReadByMe = false;
+  if (msg.readBy && Array.isArray(msg.readBy) && msg.readBy.length > 0) {
+    isReadByMe = msg.readBy.includes(uid);
+  }
+
+  const row = document.createElement('div');
+  row.className = `message-row ${side}`;
+  row.dataset.msgId = msg.id;
+
+  const avatarText = document.createElement('div');
+  avatarText.className = 'avatar-text';
+  avatarText.textContent = msg.user ? msg.user[0].toUpperCase() : '?';
+
+  const bubble = document.createElement('div');
+  bubble.className = `message ${side}`;
+  bubble.innerHTML = `
+    <span class="message-text">${sanitizeInput(msg.text)}</span>
+    <div class="message-meta">
+        <span class="message-time">${time}</span>
+        <span class="read-status">${isReadByMe && side === 'you' ? '已讀' : ''}</span>
+    </div>
+    ${msg.uid === uid ? '<div class="message-actions"><button class="edit-btn">編輯</button><button class="delete-btn">刪除</button></div>' : ''}
+  `;
+
+  if (side === 'you') {
+    row.appendChild(bubble);
+    row.appendChild(avatarText);
+  } else {
+    row.appendChild(avatarText);
+    row.appendChild(bubble);
+  }
+
+  chatBox.appendChild(row);
+  chatBox.scrollTop = chatBox.scrollHeight;
+
+  if (msg.uid === uid) {
+    bubble.querySelector('.edit-btn')?.addEventListener('click', () => editMessage(msg.id, msg.text));
+    bubble.querySelector('.delete-btn')?.addEventListener('click', () => deleteMessage(msg.id));
+  }
 }
 
-.avatar-placeholder-img {
-  width: 100px;
-  height: 100px;
-  border-radius: 50%;
-  margin-bottom: 20px;
-  object-fit: contain;
+async function markMessageAsRead(msgId, uid) {
+  try {
+    await updateDoc(doc(firestore, 'rooms', currentRoom, 'messages', msgId), { readBy: arrayUnion(uid) });
+  } catch(e) { console.error(e); }
 }
 
-.google-btn {
-  padding: 12px 24px;
-  border: none;
-  border-radius: 50px;
-  background: #4285f4;
-  color: white;
-  cursor: pointer;
-  font-size: 1rem;
-  font-weight: 600;
-  margin-top: 20px;
-  transition: transform 0.2s, box-shadow 0.2s;
-  box-shadow: 0 4px 6px rgba(66, 133, 244, 0.3);
+function editMessage(msgId, originalText) {
+  messageEditState = { msgId, originalText };
+  messageInput.value = originalText;
+  messageInput.focus();
+  sendBtn.textContent = '更新';
 }
 
-.google-btn:hover {
-  background: #357abd;
-  transform: translateY(-2px);
-  box-shadow: 0 6px 8px rgba(66, 133, 244, 0.4);
+async function deleteMessage(msgId) {
+  if (confirm('確定刪除？')) await deleteDoc(doc(firestore, 'rooms', currentRoom, 'messages', msgId));
 }
 
-/* --- 聊天主介面 --- */
-.chat-section {
-  width: 100%;
-  height: 100%;
-  background: rgba(255, 255, 255, 0.9);
-  border-radius: 16px;
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-  box-shadow: 0 10px 40px rgba(0,0,0,0.3);
+// --- 登入/登出 ---
+loginBtn.onclick = async () => {
+  try {
+    await signInWithPopup(auth, provider);
+  } catch (e) {
+    alert(`登入失敗：${e.message}`);
+  }
+};
+
+logoutBtn.onclick = async () => {
+  try { await signOut(auth); } catch (e) { alert('登出失敗'); }
+};
+
+onAuthStateChanged(auth, user => {
+  if (user) {
+    userInfo.textContent = `👋 ${user.displayName}`;
+    loginCard.style.display = 'none';
+    chatSection.style.display = 'flex';
+    logoutBtn.style.display = 'inline-block';
+    loginBtn.style.display = 'none';
+    
+    setDoc(doc(firestore, 'users', user.uid), { displayName: user.displayName || '匿名' }, { merge: true });
+    
+    setupPresence(user);
+    watchPresence();
+    watchRoomList();
+  } else {
+    userInfo.textContent = '';
+    loginCard.style.display = 'block';
+    chatSection.style.display = 'none';
+    logoutBtn.style.display = 'none';
+    loginBtn.style.display = 'inline-block';
+    
+    presenceList.innerHTML = '<h3>🟢 在線使用者</h3><div>無在線</div>';
+    chatBox.innerHTML = '';
+    roomSelectText.textContent = '選擇聊天室';
+    roomListOptions.innerHTML = '<li class="option disabled selected">選擇聊天室</li>';
+    typingIndicator.textContent = '';
+    if (unsubscribe) unsubscribe();
+    userNameCache.clear();
+    messageEditState = null;
+    currentRoom = '';
+  }
+});
+
+// --- 房間邏輯 ---
+roomSelectBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    roomSelectWrapper.classList.toggle('active');
+    roomListOptions.style.display = roomListOptions.style.display === 'block' ? 'none' : 'block';
+});
+
+document.addEventListener('click', (e) => {
+    if (!roomSelectWrapper.contains(e.target)) {
+        roomSelectWrapper.classList.remove('active');
+        roomListOptions.style.display = 'none';
+    }
+});
+
+function watchRoomList() {
+  onSnapshot(collection(firestore, 'rooms'), snap => {
+    roomListOptions.innerHTML = '<li class="option disabled">選擇聊天室</li>';
+    snap.forEach(doc => {
+      const li = document.createElement('li');
+      li.className = 'option';
+      li.textContent = doc.id;
+      li.onclick = () => {
+        roomInput.value = doc.id;
+        roomSelectText.textContent = doc.id;
+        roomListOptions.style.display = 'none';
+        roomSelectWrapper.classList.remove('active');
+        joinRoomBtn.click();
+      };
+      roomListOptions.appendChild(li);
+    });
+  });
 }
 
-header {
-  background: #011749;
-  color: white;
-  padding: 15px 20px;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
+joinRoomBtn.onclick = async () => {
+  const room = roomInput.value.trim();
+  if (!room) return alert('請輸入聊天室名稱');
+  if (currentRoom === room) return;
+
+  try {
+    joinRoomBtn.disabled = true;
+    joinRoomBtn.textContent = '載入中...';
+    chatBox.innerHTML = '';
+    currentRoom = room;
+    roomSelectText.textContent = room;
+    if (unsubscribe) unsubscribe();
+
+    await setDoc(doc(firestore, 'rooms', room), { createdAt: serverTimestamp() }, { merge: true });
+
+    const q = query(collection(firestore, 'rooms', currentRoom, 'messages'), orderBy('timestamp'));
+    unsubscribe = onSnapshot(q, snap => {
+      const uid = auth.currentUser?.uid;
+      snap.docChanges().forEach(async change => {
+        const msg = { id: change.doc.id, ...change.doc.data() };
+        if (change.type === 'added') {
+          await appendMessage(msg, uid);
+          if (msg.uid !== uid && !msg.readBy?.includes(uid)) await markMessageAsRead(msg.id, uid);
+        } else if (change.type === 'modified') {
+          const existingRow = chatBox.querySelector(`[data-msg-id="${msg.id}"]`);
+          if (existingRow) {
+            existingRow.remove();
+            await appendMessage(msg, uid);
+          }
+        } else if (change.type === 'removed') {
+          chatBox.querySelector(`[data-msg-id="${msg.id}"]`)?.remove();
+        }
+      });
+    });
+    watchTyping();
+  } catch (e) {
+    alert(`加入失敗：${e.message}`);
+  } finally {
+    joinRoomBtn.disabled = false;
+    joinRoomBtn.textContent = '加入 / 建立';
+  }
+};
+
+// --- 發送訊息 ---
+sendBtn.onclick = async () => {
+  try {
+    const text = messageInput.value.trim();
+    const user = auth.currentUser;
+    if (!text || !user || !currentRoom) return;
+
+    if (messageEditState) {
+      await updateDoc(doc(firestore, 'rooms', currentRoom, 'messages', messageEditState.msgId), { text, timestamp: serverTimestamp() });
+      messageEditState = null;
+      sendBtn.textContent = '送出';
+    } else {
+      await addDoc(collection(firestore, 'rooms', currentRoom, 'messages'), {
+        user: user.displayName,
+        uid: user.uid,
+        text,
+        timestamp: serverTimestamp(),
+        readBy: [user.uid]
+      });
+    }
+    messageInput.value = '';
+    messageInput.style.height = 'auto';
+  } catch (e) { alert('操作失敗'); }
+};
+
+messageInput.addEventListener('keypress', e => {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendBtn.click(); }
+});
+
+// --- 在線/打字提示 ---
+function setupPresence(user) {
+  const userRef = ref(rtdb, 'presence/' + user.uid);
+  onDisconnect(userRef).set({ state: 'offline', displayName: user.displayName || '匿名', last_changed: serverTimestamp() });
+  dbSet(userRef, { state: 'online', displayName: user.displayName || '匿名', last_changed: serverTimestamp() });
 }
 
-.chat-title { margin: 0; font-size: 1.2rem; }
-
-/* --- 房間控制區 (Custom Select) --- */
-.room-section {
-  padding: 10px 20px;
-  display: flex;
-  gap: 10px;
-  background: #f8f9fa;
-  border-bottom: 1px solid #eee;
+function watchPresence() {
+  const allRef = ref(rtdb, 'presence');
+  onValue(allRef, snap => {
+    const users = snap.val() || {};
+    presenceList.innerHTML = '<h3>🟢 在線使用者</h3>';
+    const onlineUsers = Object.values(users).filter(u => u?.state === 'online');
+    presenceList.innerHTML += onlineUsers.length ? onlineUsers.map(u => `<div class="presence-item">${u.displayName}</div>`).join('') : '<div class="presence-item">無在線</div>';
+  });
 }
 
-.custom-select {
-  position: relative;
-  width: 200px;
+function watchTyping() {
+  if (!currentRoom) return;
+  const typingRef = ref(rtdb, `typing/${currentRoom}`);
+  onValue(typingRef, snap => {
+    const data = snap.val() || {};
+    const othersTyping = Object.values(data).filter(u => u?.name && u.name !== auth.currentUser?.displayName).map(u => u.name);
+    typingIndicator.textContent = othersTyping.length ? `${othersTyping.join('、')} 正在輸入...` : '';
+  });
 }
 
-.select-btn {
-  width: 100%;
-  padding: 10px 15px;
-  background: white;
-  border: 1px solid #ccc;
-  border-radius: 8px;
-  cursor: pointer;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  font-size: 0.95rem;
+function debounceTyping() {
+  const user = auth.currentUser;
+  if (!user || !currentRoom) return;
+  const typingRef = ref(rtdb, `typing/${currentRoom}/${user.uid}`);
+  clearTimeout(typingTimeout);
+  dbSet(typingRef, { name: user.displayName });
+  typingTimeout = setTimeout(() => { dbSet(typingRef, null); typingTimeout = null; }, 2000);
 }
 
-.select-options {
-  position: absolute;
-  top: 105%;
-  left: 0;
-  width: 100%;
-  background: white;
-  border: 1px solid #ccc;
-  border-radius: 8px;
-  box-shadow: 0 5px 15px rgba(0,0,0,0.1);
-  list-style: none;
-  padding: 0;
-  margin: 0;
-  z-index: 100;
-  max-height: 200px;
-  overflow-y: auto;
-  display: none;
-}
+messageInput.addEventListener('input', debounceTyping);
+messageInput.addEventListener('input', () => { messageInput.style.height = 'auto'; messageInput.style.height = `${messageInput.scrollHeight}px`; });
 
-.select-options li {
-  padding: 10px 15px;
-  cursor: pointer;
-  border-bottom: 1px solid #f0f0f0;
-}
-
-.select-options li:hover:not(.disabled) { background: #f0f9ff; }
-.select-icon { transition: transform 0.3s; }
-.custom-select.active .select-icon { transform: rotate(180deg); }
-
-#room-name {
-  flex: 1;
-  padding: 10px;
-  border: 1px solid #ccc;
-  border-radius: 8px;
-}
-
-#join-room {
-  padding: 0 20px;
-  border: none;
-  border-radius: 8px;
-  background: #4caf50;
-  color: white;
-  cursor: pointer;
-  font-weight: bold;
-}
-
-/* --- 聊天內容區 --- */
-.chat-container {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  position: relative;
-}
-
-.chat-box {
-  flex: 1;
-  background: #f5f7fb;
-  padding: 20px;
-  overflow-y: auto;
-  scroll-behavior: smooth;
-  display: flex;
-  flex-direction: column;
-  gap: 15px;
-}
-
-/* --- 訊息氣泡 --- */
-.message-row {
-  display: flex;
-  align-items: flex-end;
-  margin-bottom: 5px;
-  width: 100%;
-}
-
-.message-row.you { justify-content: flex-end; }
-.message-row.other { justify-content: flex-start; }
-
-.avatar-text {
-  width: 35px;
-  height: 35px;
-  background: #ccc;
-  color: white;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-weight: bold;
-  flex-shrink: 0;
-  font-size: 0.9rem;
-}
-
-.message-row.you .avatar-text { background: #011749; margin-left: 10px; order: 2; }
-.message-row.other .avatar-text { background: #60a5fa; margin-right: 10px; order: 1; }
-
-.message {
-  max-width: 60%;
-  padding: 12px 16px;
-  position: relative;
-  font-size: 1rem;
-  line-height: 1.4;
-  word-wrap: break-word;
-}
-
-.message.you {
-  background: #011749;
-  color: white;
-  border-radius: 18px 18px 0 18px;
-  order: 1;
-  box-shadow: 0 2px 5px rgba(1, 23, 73, 0.2);
-}
-
-.message.other {
-  background: white;
-  color: #333;
-  border-radius: 18px 18px 18px 0;
-  order: 2;
-  box-shadow: 0 1px 2px rgba(0,0,0,0.1);
-}
-
-.message-meta {
-  display: flex;
-  justify-content: flex-end;
-  gap: 5px;
-  margin-top: 4px;
-}
-
-.message-time { font-size: 0.7rem; opacity: 0.7; }
-.read-status { font-size: 0.7rem; font-weight: bold; }
-
-.message-actions {
-  display: none;
-  position: absolute;
-  top: -30px;
-  right: 0;
-  background: white;
-  padding: 5px;
-  border-radius: 8px;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.15);
-  z-index: 10;
-}
-
-.message-row:hover .message-actions { display: flex; gap: 5px; }
-.message-actions button { padding: 4px 8px; font-size: 0.75rem; border: none; border-radius: 4px; cursor: pointer; }
-.edit-btn { background: #fbbf24; color: #fff; }
-.delete-btn { background: #ef4444; color: #fff; }
-
-/* --- 底部輸入區 --- */
-.message-input-wrapper {
-  background: white;
-  padding: 15px;
-  border-top: 1px solid #eee;
-}
-
-.message-input-indicator {
-  height: 20px;
-  font-size: 0.8rem;
-  color: #666;
-  padding-left: 10px;
-  margin-bottom: 5px;
-  font-style: italic;
-}
-
-.message-input-container {
-  display: flex;
-  gap: 10px;
-  align-items: flex-end;
-}
-
-#message-input {
-  flex: 1;
-  padding: 12px;
-  border: 1px solid #e0e0e0;
-  border-radius: 20px;
-  background: #f8f9fa;
-  resize: none;
-  min-height: 24px;
-  max-height: 100px;
-  font-family: inherit;
-  outline: none;
-}
-
-#message-input:focus {
-  background: white;
-  border-color: #011749;
-  box-shadow: 0 0 0 2px rgba(1, 23, 73, 0.1);
-}
-
-#send-btn {
-  padding: 10px 25px;
-  height: 48px;
-  border: none;
-  border-radius: 24px;
-  background: #011749;
-  color: white;
-  cursor: pointer;
-  font-weight: bold;
-}
-
-#send-btn:hover { background: #022066; }
-
-/* --- 在線列表 --- */
-.presence-list {
-  background: white;
-  padding: 10px 15px;
-  border-top: 1px solid #eee;
-  display: flex;
-  gap: 10px;
-  overflow-x: auto;
-  white-space: nowrap;
-}
-
-.presence-list h3 { margin: 0; font-size: 0.9rem; align-self: center; margin-right: 10px; }
-.presence-item { background: #e0f2f1; color: #00695c; padding: 4px 10px; border-radius: 12px; font-size: 0.85rem; }
-
-footer {
-  text-align: center;
-  font-size: 0.8rem;
-  color: #888;
-  padding: 10px;
-  background: #f1f1f1;
-}
-
-/* --- 手機版響應式 --- */
-@media (max-width: 768px) {
-  .login-wrapper { height: 100vh; border-radius: 0; }
-  .login-card { width: 90%; margin-top: 50%; transform: translateY(-50%); }
-  .chat-section { border-radius: 0; }
-  .presence-list { display: none; }
-  .room-section { flex-direction: column; }
-  .custom-select { width: 100%; }
-  .message { max-width: 80%; }
+// --- PWA Service Worker ---
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('/chat-beta/firebase-messaging-sw.js')
+    .then(reg => console.log('SW Registered'))
+    .catch(err => console.log('SW Failed', err));
 }
