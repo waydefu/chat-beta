@@ -1265,7 +1265,9 @@ window.addEventListener('pagehide', () => {
   if (presenceConnectionRef) void remove(presenceConnectionRef);
 });
 
-if ('serviceWorker' in navigator) {
+// Production only. Against the dev server the cached shell shadows every edit,
+// so changes appear to do nothing until the cache is cleared by hand.
+if ('serviceWorker' in navigator && import.meta.env.PROD) {
   window.addEventListener('load', () => {
     void navigator.serviceWorker.register(`${import.meta.env.BASE_URL}firebase-messaging-sw.js`, { scope: import.meta.env.BASE_URL })
       .then((registration) => {

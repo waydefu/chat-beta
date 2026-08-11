@@ -31,6 +31,19 @@
   --radius-sm:12px;
   --radius-md:18px;
   --radius-lg:28px;
+
+  /* Motion tokens - see docs/motion.md.
+     Curves are Material Design 3's; durations sit inside NN/g's 100-500ms band
+     for non-essential motion. */
+  --ease-emphasized-decel:cubic-bezier(.05,.7,.1,1);
+  --ease-emphasized-accel:cubic-bezier(.3,0,.8,.15);
+  --ease-standard:cubic-bezier(.2,0,0,1);
+  --ease-spring:cubic-bezier(.2,1.25,.4,1);
+  --dur-1:120ms;
+  --dur-2:180ms;
+  --dur-3:260ms;
+  --dur-4:360ms;
+  --dur-5:480ms;
 }
 
 :root[data-theme=dark]{
@@ -123,14 +136,27 @@ button:active:not(:disabled){transform:scale(.97)}
 .setting-row input:checked::after{transform:translateX(16px)}
 .setting-row input:focus-visible{outline:3px solid #4169e82f;outline-offset:2px}
 
+/* The artwork lives on a pseudo-element so the ambient drift can run on transform
+   instead of background-position. Animating background-position here repainted the
+   largest element in the app on every frame, forever. */
 .conversation{
   position:relative;
+  isolation:isolate;
+  overflow:hidden;
+  background:var(--surface-2);
+}
+.conversation::before{
+  content:"";
+  position:absolute;
+  inset:-4%;
+  z-index:-1;
   background:
     linear-gradient(180deg,#f4f7fbad,#ffffff8c),
     url('/image/chat-light.webp') center/cover,
     var(--surface-2);
+  pointer-events:none;
 }
-:root[data-theme=dark] .conversation{
+:root[data-theme=dark] .conversation::before{
   background:
     linear-gradient(180deg,#0b13239e,#0b132385),
     url('/image/chat-dark.webp') center/cover,
@@ -182,7 +208,6 @@ button:active:not(:disabled){transform:scale(.97)}
   font-size:.7rem;
   font-weight:650;
   box-shadow:0 2px 6px #17213a0f;
-  backdrop-filter:blur(8px);
 }
 .message-actions button:hover,.message-row.you .message-actions button:hover{
   border-color:#9fb0cc;background:var(--surface);color:var(--blue);
@@ -197,8 +222,21 @@ button:active:not(:disabled){transform:scale(.97)}
   border-color:#7d3b43;background:#3a1b20;color:#ff9ba5;
 }
 .reply-quote{border-left-width:2px;background:#4169e80d}
-.pending .message-bubble{background-image:linear-gradient(110deg,transparent 20%,#ffffff1a 45%,transparent 70%);background-size:220% 100%;animation:pending-shimmer 1.6s infinite}
-@keyframes pending-shimmer{to{background-position:-220% 0}}
+/* Sheen rides across on transform; animating background-position repainted the
+   bubble every frame for as long as the message stayed unsent. */
+.pending .message-bubble{position:relative;overflow:hidden}
+.pending .message-bubble::after{
+  content:"";
+  position:absolute;top:0;bottom:0;left:0;
+  width:60%;
+  background:linear-gradient(110deg,transparent,#ffffff2e,transparent);
+  animation:pending-sheen 1.6s var(--ease-standard) infinite;
+  pointer-events:none;
+}
+@keyframes pending-sheen{
+  from{transform:translateX(-120%)}
+  to{transform:translateX(280%)}
+}
 
 .composer-shell{padding:8px 22px 18px;border-top:0;background:linear-gradient(180deg,transparent 0,var(--surface) 22%)}
 .typing-indicator{display:flex;align-items:center;max-width:920px;height:auto;min-height:28px;margin:0 auto;padding:0 8px}
@@ -273,7 +311,12 @@ button:active:not(:disabled){transform:scale(.97)}
   border:2px solid var(--surface);border-radius:50%;
   background:var(--danger);
   box-shadow:0 2px 6px #d4485559;
-  animation:chat-head-ping 2.2s ease-out infinite;
+}
+.chat-head-badge::after{
+  content:"";position:absolute;inset:-2px;
+  border-radius:50%;background:var(--danger);
+  animation:ring-pulse 2.2s var(--ease-emphasized-decel) infinite;
+  pointer-events:none;
 }
 .chat-head-name{
   position:absolute;right:calc(100% + 10px);
@@ -296,7 +339,6 @@ button:active:not(:disabled){transform:scale(.97)}
   font-size:.7rem;font-weight:800;
 }
 @keyframes chat-head-pop{from{opacity:0;transform:scale(.5)}to{opacity:1;transform:none}}
-@keyframes chat-head-ping{0%,70%,100%{box-shadow:0 0 0 0 #d4485500}35%{box-shadow:0 0 0 6px #d4485533}}
 @media(max-width:720px){
   .chat-heads{right:12px;bottom:calc(84px + env(safe-area-inset-bottom));gap:8px}
   .chat-head{width:48px;height:48px}
@@ -358,24 +400,33 @@ button:active:not(:disabled){transform:scale(.97)}
 }
 
 /* Motion language: calm, short, and spatially consistent */
-.auth-card{animation:auth-card-enter .72s cubic-bezier(.2,.8,.2,1) both}
+.auth-card{animation:auth-card-enter var(--dur-5) var(--ease-spring) both}
 .brand-mark{animation:brand-float 5s ease-in-out 1s infinite}
 .auth-view::before{animation:orb-drift 18s ease-in-out infinite alternate}
 .auth-view::after{animation:orb-drift 22s ease-in-out -7s infinite alternate-reverse}
-.app-shell:not([hidden]) .sidebar{animation:panel-enter-left .42s cubic-bezier(.2,.8,.2,1) both}
-.app-shell:not([hidden]) .conversation{animation:content-enter .38s ease-out .05s both,conversation-background-drift 34s ease-in-out 1s infinite alternate}
-.app-shell:not([hidden]) .presence-panel{animation:panel-enter-right .42s cubic-bezier(.2,.8,.2,1) .08s both}
-.message-row{animation:message-enter .26s cubic-bezier(.2,.8,.2,1) both;transform-origin:bottom left}
+/* Staged entrance: sidebar, then content, then presence. The offsets are the
+   ceremony - the panels arrive as a sequence rather than all at once. */
+.app-shell:not([hidden]) .sidebar{animation:panel-enter-left var(--dur-4) var(--ease-emphasized-decel) both}
+.app-shell:not([hidden]) .conversation{animation:content-enter var(--dur-4) var(--ease-emphasized-decel) 60ms both}
+.app-shell:not([hidden]) .conversation::before{animation:conversation-drift 40s ease-in-out 1s infinite alternate}
+.app-shell:not([hidden]) .presence-panel{animation:panel-enter-right var(--dur-4) var(--ease-emphasized-decel) 120ms both}
+.message-row{animation:message-enter var(--dur-3) var(--ease-emphasized-decel) both;transform-origin:bottom left}
 .message-row.you{transform-origin:bottom right}
 .search-bar:not([hidden]){animation:search-reveal .2s ease-out both}
 .toast{animation:toast-enter .3s cubic-bezier(.2,.8,.2,1) both}
 .confirm-dialog[open]{animation:dialog-enter .24s cubic-bezier(.2,.8,.2,1) both}
-.status-dot.online{animation:status-pulse 2.4s ease-out infinite}
+.status-dot.online{position:relative}
+.status-dot.online::after{
+  content:"";position:absolute;inset:0;
+  border-radius:50%;background:var(--success);
+  animation:ring-pulse 2.4s var(--ease-emphasized-decel) infinite;
+  pointer-events:none;
+}
 .sidebar,.presence-panel{transition:transform .28s cubic-bezier(.2,.8,.2,1)}
 
 @keyframes auth-card-enter{
-  from{opacity:0;transform:translateY(18px) scale(.975);filter:blur(6px)}
-  to{opacity:1;transform:none;filter:none}
+  from{opacity:0;transform:translateY(20px) scale(.97)}
+  to{opacity:1;transform:none}
 }
 @keyframes brand-float{
   0%,100%{transform:translateY(0)}
@@ -397,9 +448,9 @@ button:active:not(:disabled){transform:scale(.97)}
   from{opacity:0;transform:translateY(8px)}
   to{opacity:1;transform:none}
 }
-@keyframes conversation-background-drift{
-  from{background-position:center,49% 50%}
-  to{background-position:center,51% 48%}
+@keyframes conversation-drift{
+  from{transform:scale(1.02) translate3d(-.6%,.4%,0)}
+  to{transform:scale(1.06) translate3d(.8%,-.6%,0)}
 }
 @keyframes message-enter{
   from{opacity:0;transform:translateY(8px) scale(.985)}
@@ -417,9 +468,10 @@ button:active:not(:disabled){transform:scale(.97)}
   from{opacity:0;transform:translateY(10px) scale(.97)}
   to{opacity:1;transform:none}
 }
-@keyframes status-pulse{
-  0%,55%{box-shadow:0 0 0 0 #17a47738}
-  100%{box-shadow:0 0 0 7px transparent}
+/* Expanding ring on transform+opacity rather than an animated box-shadow spread. */
+@keyframes ring-pulse{
+  0%{opacity:.45;transform:scale(1)}
+  70%,100%{opacity:0;transform:scale(3.2)}
 }
 
 @media(max-width:1050px){
