@@ -208,21 +208,40 @@ offlineToggle.addEventListener('change', async () => {
 
 function setSidebar(open: boolean): void {
   roomSidebar.classList.toggle('open', open);
-  sidebarScrim.hidden = !open;
+  openSidebarBtn.setAttribute('aria-expanded', String(open));
+  syncScrim();
+}
+
+function setPresencePanel(open: boolean): void {
+  presencePanel.classList.toggle('open', open);
+  membersToggleBtn.setAttribute('aria-expanded', String(open));
+  syncScrim();
+}
+
+function syncScrim(): void {
+  const sidebarOverlay = window.matchMedia('(max-width: 720px)').matches && roomSidebar.classList.contains('open');
+  const presenceOverlay = window.matchMedia('(max-width: 1050px)').matches && presencePanel.classList.contains('open');
+  sidebarScrim.hidden = !sidebarOverlay && !presenceOverlay;
 }
 
 openSidebarBtn.addEventListener('click', () => setSidebar(true));
 closeSidebarBtn.addEventListener('click', () => setSidebar(false));
-sidebarScrim.addEventListener('click', () => setSidebar(false));
-membersToggleBtn.addEventListener('click', () => presencePanel.classList.add('open'));
-closeMembersBtn.addEventListener('click', () => presencePanel.classList.remove('open'));
+sidebarScrim.addEventListener('click', () => {
+  setSidebar(false);
+  setPresencePanel(false);
+});
+membersToggleBtn.addEventListener('click', () => setPresencePanel(true));
+closeMembersBtn.addEventListener('click', () => setPresencePanel(false));
+window.addEventListener('resize', syncScrim);
 
 searchToggleBtn.addEventListener('click', () => {
   searchBar.hidden = false;
+  searchToggleBtn.setAttribute('aria-expanded', 'true');
   messageSearch.focus();
 });
 closeSearchBtn.addEventListener('click', () => {
   searchBar.hidden = true;
+  searchToggleBtn.setAttribute('aria-expanded', 'false');
   messageSearch.value = '';
   filterMessages('');
 });
@@ -489,6 +508,8 @@ function createMessageRow(message: ChatMessage): HTMLElement {
   const avatar = document.createElement('div');
   avatar.className = 'avatar';
   avatar.textContent = initialOf(message.user);
+  const profile = document.createElement('div');
+  profile.className = 'message-profile';
   const wrap = document.createElement('div');
   wrap.className = 'message-wrap';
   const author = document.createElement('p');
@@ -514,9 +535,10 @@ function createMessageRow(message: ChatMessage): HTMLElement {
   if (message.uid === currentUser?.uid) {
     actions.append(actionButton('編輯', () => startEdit(message.id)), actionButton('刪除', () => void requestDelete(message.id)));
   }
+  profile.append(avatar, author);
   bubble.append(quote, text, meta);
-  wrap.append(author, bubble, actions);
-  row.append(avatar, wrap);
+  wrap.append(bubble, actions);
+  row.append(profile, wrap);
   patchMessageElement(row, message);
   return row;
 }
@@ -748,6 +770,13 @@ document.addEventListener('visibilitychange', () => {
     const latest = [...messages.values()].sort(compareMessages).at(-1);
     if (latest) markRoomRead(currentRoom, latest.id);
   }
+});
+
+document.addEventListener('keydown', (event) => {
+  if (event.key !== 'Escape') return;
+  setSidebar(false);
+  setPresencePanel(false);
+  if (!searchBar.hidden) closeSearchBtn.click();
 });
 
 function setupPresence(user: User): void {

@@ -15,9 +15,9 @@
     <main id="auth-view" class="auth-view">
       <section class="auth-card" aria-labelledby="auth-title">
         <img class="brand-mark" src="./image/logo.png" alt="" width="104" height="104" />
-        <p class="eyebrow">CHAT LITE · 2.0</p>
-        <h1 id="auth-title">讓對話保持簡單</h1>
-        <p class="auth-copy">登入後加入聊天室，訊息會在你的裝置間即時同步。</p>
+        <p class="eyebrow">CHAT LITE · REALTIME</p>
+        <h1 id="auth-title">自在聊，專注當下</h1>
+        <p class="auth-copy">輕量、即時、不打擾。登入後即可在不同裝置延續每一段對話。</p>
         <button id="login-btn" class="primary-btn auth-btn" type="button">
           <span aria-hidden="true">G</span> 使用 Google 登入
         </button>
@@ -54,14 +54,14 @@
 
       <section class="conversation" aria-label="聊天室內容">
         <header class="chat-header">
-          <button id="open-sidebar-btn" class="icon-btn mobile-only" type="button" aria-label="開啟聊天室列表">☰</button>
+          <button id="open-sidebar-btn" class="icon-btn mobile-only" type="button" aria-label="開啟聊天室列表" aria-controls="room-sidebar" aria-expanded="false">☰</button>
           <div class="chat-heading">
             <h1 id="current-room-title">選擇聊天室</h1>
             <p id="connection-status"><span class="status-dot"></span>準備連線</p>
           </div>
           <div class="header-actions">
-            <button id="search-toggle-btn" class="icon-btn" type="button" aria-label="搜尋已載入訊息">⌕</button>
-            <button id="members-toggle-btn" class="icon-btn" type="button" aria-label="顯示在線使用者">◎</button>
+            <button id="search-toggle-btn" class="icon-btn" type="button" aria-label="搜尋已載入訊息" aria-controls="search-bar" aria-expanded="false">⌕</button>
+            <button id="members-toggle-btn" class="icon-btn" type="button" aria-label="顯示在線使用者" aria-controls="presence-panel" aria-expanded="false">◎</button>
           </div>
         </header>
 
