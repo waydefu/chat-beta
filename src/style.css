@@ -145,20 +145,24 @@ button:active:not(:disabled){transform:scale(.97)}
   overflow:hidden;
   background:var(--surface-2);
 }
+/* The panel is portrait but the artwork is 16:9, so `cover` already crops to the
+   middle ~55%. Keep the inflation to the minimum the drift needs (1.5% each side,
+   so it can travel +/-1% without exposing an edge) - every extra percent of zoom
+   is image the user never sees. */
 .conversation::before{
   content:"";
   position:absolute;
-  inset:-4%;
+  inset:-1.5%;
   z-index:-1;
   background:
-    linear-gradient(180deg,#f4f7fbad,#ffffff8c),
+    linear-gradient(180deg,#f4f7fb61,#ffffff42),
     url('/image/chat-light.webp') center/cover,
     var(--surface-2);
   pointer-events:none;
 }
 :root[data-theme=dark] .conversation::before{
   background:
-    linear-gradient(180deg,#0b13239e,#0b132385),
+    linear-gradient(180deg,#0b13236b,#0b132352),
     url('/image/chat-dark.webp') center/cover,
     var(--surface-2);
 }
@@ -448,9 +452,11 @@ button:active:not(:disabled){transform:scale(.97)}
   from{opacity:0;transform:translateY(8px)}
   to{opacity:1;transform:none}
 }
+/* Translate only - a scale here compounds with `cover` and zooms the artwork into
+   its own flat centre. */
 @keyframes conversation-drift{
-  from{transform:scale(1.02) translate3d(-.6%,.4%,0)}
-  to{transform:scale(1.06) translate3d(.8%,-.6%,0)}
+  from{transform:translate3d(-1%,-.7%,0)}
+  to{transform:translate3d(1%,.7%,0)}
 }
 @keyframes message-enter{
   from{opacity:0;transform:translateY(8px) scale(.985)}
