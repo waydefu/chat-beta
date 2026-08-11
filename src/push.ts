@@ -65,6 +65,12 @@ export async function enablePush(uid: string): Promise<string | null> {
   }
 
   try {
+    // navigator.serviceWorker.ready never rejects - it waits indefinitely for an
+    // active worker. Registration is production-only, so check first rather than
+    // hanging the toggle forever wherever no worker exists.
+    if (!(await navigator.serviceWorker.getRegistration())) {
+      return '此環境沒有註冊 Service Worker，無法啟用推播。';
+    }
     const registration = await navigator.serviceWorker.ready;
     const token = await getToken(ensureMessaging(), {
       vapidKey: VAPID_KEY,

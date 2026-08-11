@@ -24,18 +24,13 @@ export const notifyOnMessage = onDocumentCreated(
     const { roomId } = event.params;
     const firestore = getFirestore();
 
-    const [readStates, users] = await Promise.all([
-      firestore.collection(`rooms/${roomId}/readStates`).get(),
-      firestore.collection('users').get(),
-    ]);
+    const readStates = await firestore.collection(`rooms/${roomId}/readStates`).get();
 
     // Everyone who has ever opened this room is a member worth notifying.
     const recipients = readStates.docs
       .map((doc) => doc.id)
       .filter((uid) => uid !== message.uid);
     if (!recipients.length) return;
-
-    const displayNames = new Map(users.docs.map((doc) => [doc.id, doc.data().displayName]));
 
     const tokenLists = await Promise.all(recipients.map(async (uid) => {
       const snapshot = await firestore.collection(`users/${uid}/pushTokens`).get();
@@ -44,7 +39,7 @@ export const notifyOnMessage = onDocumentCreated(
     const targets = tokenLists.flat().filter((entry) => typeof entry.token === 'string' && entry.token);
     if (!targets.length) return;
 
-    const author = message.user || displayNames.get(message.uid) || '有人';
+    const author = message.user || '有人';
     const body = String(message.text || '').slice(0, MAX_BODY);
 
     const stale = [];

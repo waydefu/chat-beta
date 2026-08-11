@@ -606,6 +606,37 @@ function snapChatHeads(): void {
   } catch { /* private mode: position just is not remembered */ }
 }
 
+function moveChatHeadDrag(event: PointerEvent): void {
+  if (!chatHeadsDrag || event.pointerId !== chatHeadsDrag.pointerId) return;
+  if (!chatHeadsDrag.moved) {
+    if (Math.hypot(event.clientX - chatHeadsDrag.startX, event.clientY - chatHeadsDrag.startY) < 5) return;
+    chatHeadsDrag.moved = true;
+    chatHeads.classList.add('dragging');
+  }
+  chatHeadsPos = { x: event.clientX - chatHeadsDrag.offsetX, y: event.clientY - chatHeadsDrag.offsetY };
+  applyChatHeadsPosition();
+}
+
+function endChatHeadDrag(event: PointerEvent): void {
+  // Detach even when there is no matching drag state, so a stray pointerup cannot
+  // strand the window listeners.
+  if (chatHeadsDrag && event.pointerId !== chatHeadsDrag.pointerId) return;
+  const moved = chatHeadsDrag?.moved ?? false;
+  chatHeads.classList.remove('dragging');
+  chatHeadsDrag = null;
+  window.removeEventListener('pointermove', moveChatHeadDrag);
+  window.removeEventListener('pointerup', endChatHeadDrag);
+  window.removeEventListener('pointercancel', endChatHeadDrag);
+  if (!moved) return;
+  lastChatHeadDragEnd = Date.now();
+  snapChatHeads();
+}
+
+// Tracked on window rather than via setPointerCapture: whether a captured pointer
+// retargets the follow-up click to the capture element is inconsistent across
+// browsers, and that would swallow the click on the bubble itself. Window
+// listeners follow the pointer outside the element just as well and leave the
+// button's own click (and keyboard activation) untouched.
 chatHeads.addEventListener('pointerdown', (event) => {
   if (event.button !== 0) return;
   const rect = chatHeads.getBoundingClientRect();
@@ -617,33 +648,11 @@ chatHeads.addEventListener('pointerdown', (event) => {
     startY: event.clientY,
     moved: false,
   };
-  chatHeads.setPointerCapture(event.pointerId);
+  window.addEventListener('pointermove', moveChatHeadDrag);
+  window.addEventListener('pointerup', endChatHeadDrag);
+  window.addEventListener('pointercancel', endChatHeadDrag);
 });
 
-chatHeads.addEventListener('pointermove', (event) => {
-  if (!chatHeadsDrag || event.pointerId !== chatHeadsDrag.pointerId) return;
-  if (!chatHeadsDrag.moved) {
-    if (Math.hypot(event.clientX - chatHeadsDrag.startX, event.clientY - chatHeadsDrag.startY) < 5) return;
-    chatHeadsDrag.moved = true;
-    chatHeads.classList.add('dragging');
-  }
-  chatHeadsPos = { x: event.clientX - chatHeadsDrag.offsetX, y: event.clientY - chatHeadsDrag.offsetY };
-  applyChatHeadsPosition();
-});
-
-function endChatHeadDrag(event: PointerEvent): void {
-  if (!chatHeadsDrag || event.pointerId !== chatHeadsDrag.pointerId) return;
-  const { moved } = chatHeadsDrag;
-  if (chatHeads.hasPointerCapture(event.pointerId)) chatHeads.releasePointerCapture(event.pointerId);
-  chatHeads.classList.remove('dragging');
-  chatHeadsDrag = null;
-  if (!moved) return;
-  lastChatHeadDragEnd = Date.now();
-  snapChatHeads();
-}
-
-chatHeads.addEventListener('pointerup', endChatHeadDrag);
-chatHeads.addEventListener('pointercancel', endChatHeadDrag);
 window.addEventListener('resize', applyChatHeadsPosition);
 
 function createRoomButton(room: RoomPreview): HTMLButtonElement {
