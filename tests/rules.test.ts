@@ -76,6 +76,35 @@ describe('Firestore rules', () => {
     }));
   });
 
+  it('accepts a Google-hosted profile photo for the matching user', async () => {
+    const alice = testFirestore(environment.authenticatedContext('alice'));
+    await assertSucceeds(setDoc(doc(alice, 'users', 'alice'), {
+      displayName: 'Alice',
+      photoURL: 'https://lh3.googleusercontent.com/a/ACg8ocKexample=s96-c',
+    }));
+  });
+
+  it('rejects a profile photo hosted anywhere but Google', async () => {
+    const alice = testFirestore(environment.authenticatedContext('alice'));
+    await assertFails(setDoc(doc(alice, 'users', 'alice'), {
+      displayName: 'Alice',
+      photoURL: 'https://tracker.example.com/pixel.png',
+    }));
+  });
+
+  it('rejects a photo URL that only embeds the Google host elsewhere in the string', async () => {
+    const alice = testFirestore(environment.authenticatedContext('alice'));
+    await assertFails(setDoc(doc(alice, 'users', 'alice'), {
+      displayName: 'Alice',
+      photoURL: 'https://tracker.example.com/?u=https://lh3.googleusercontent.com/a/x',
+    }));
+  });
+
+  it('restricts profile writes to the matching user', async () => {
+    const alice = testFirestore(environment.authenticatedContext('alice'));
+    await assertFails(setDoc(doc(alice, 'users', 'bob'), { displayName: 'Bob' }));
+  });
+
   it('restricts read-state writes to the matching user', async () => {
     const alice = testFirestore(environment.authenticatedContext('alice'));
     const value = { lastReadAt: serverTimestamp(), lastReadMessageId: 'm1', updatedAt: serverTimestamp() };

@@ -40,7 +40,15 @@ import {
   provider,
   rtdb,
 } from './firebase';
-import type { ChatMessage, OnlineUser, RoomPreview, RoomReadState, Unsubscribe } from './types';
+import {
+  PUSH_PREFERENCE_KEY,
+  disablePush,
+  enablePush,
+  pushSupported,
+  stopForegroundPush,
+  watchForegroundPush,
+} from './push';
+import type { ChatMessage, OnlineUser, RoomPreview, RoomReadState, UserProfile, Unsubscribe } from './types';
 import {
   compareMessages,
   encodeRoomKey,
@@ -54,6 +62,9 @@ import {
 
 const PAGE_SIZE = 50;
 const THEME_KEY = 'chat-lite:theme';
+const CHAT_HEADS_KEY = 'chat-lite:chat-heads';
+const MAX_CHAT_HEADS = 3;
+const CHAT_HEAD_MARGIN = 14;
 
 function byId<T extends HTMLElement>(id: string): T {
   const node = document.getElementById(id);
@@ -95,6 +106,7 @@ const searchToggleBtn = byId<HTMLButtonElement>('search-toggle-btn');
 const closeSearchBtn = byId<HTMLButtonElement>('close-search-btn');
 const themeToggle = byId<HTMLInputElement>('theme-toggle');
 const offlineToggle = byId<HTMLInputElement>('offline-toggle');
+const pushToggle = byId<HTMLInputElement>('push-toggle');
 const presencePanel = byId<HTMLElement>('presence-panel');
 const membersToggleBtn = byId<HTMLButtonElement>('members-toggle-btn');
 const closeMembersBtn = byId<HTMLButtonElement>('close-members-btn');
@@ -103,6 +115,7 @@ const presenceCount = byId<HTMLElement>('presence-count');
 const accountAvatar = byId<HTMLElement>('account-avatar');
 const accountName = byId<HTMLElement>('account-name');
 const accountEmail = byId<HTMLElement>('account-email');
+const chatHeads = byId<HTMLElement>('chat-heads');
 const toastRegion = byId<HTMLElement>('toast-region');
 const confirmDialog = byId<HTMLDialogElement>('confirm-dialog');
 const confirmTitle = byId<HTMLElement>('confirm-title');
@@ -127,6 +140,20 @@ let lastOnlineDisconnectRef: ReturnType<typeof onDisconnect> | null = null;
 let messageUnsub: Unsubscribe | null = null;
 let roomUnsub: Unsubscribe | null = null;
 let roomStateUnsub: Unsubscribe | null = null;
+let readReceiptUnsub: Unsubscribe | null = null;
+let readReceipts = new Map<string, RoomReadState>();
+let usersUnsub: Unsubscribe | null = null;
+let userProfiles = new Map<string, UserProfile>();
+let chatHeadsPos: { x: number; y: number } | null = null;
+let chatHeadsDrag: {
+  pointerId: number;
+  offsetX: number;
+  offsetY: number;
+  startX: number;
+  startY: number;
+  moved: boolean;
+} | null = null;
+let lastChatHeadDragEnd = 0;
 let typingUnsubs: Unsubscribe[] = [];
 let presenceUnsubs: Unsubscribe[] = [];
 let legacyPresence: Record<string, unknown> = {};
@@ -184,6 +211,12 @@ function applyTheme(theme: 'light' | 'dark'): void {
 
 const savedTheme = localStorage.getItem(THEME_KEY);
 applyTheme(savedTheme === 'dark' ? 'dark' : 'light');
+
+try {
+  const saved = recordOf(JSON.parse(localStorage.getItem(CHAT_HEADS_KEY) ?? 'null'));
+  if (typeof saved.x === 'number' && typeof saved.y === 'number') chatHeadsPos = { x: saved.x, y: saved.y };
+} catch { chatHeadsPos = null; }
+
 offlineToggle.checked = persistentCacheEnabled;
 
 themeToggle.addEventListener('change', () => applyTheme(themeToggle.checked ? 'dark' : 'light'));
@@ -204,6 +237,50 @@ offlineToggle.addEventListener('change', async () => {
   if (!confirmed) return;
   localStorage.setItem(OFFLINE_PREFERENCE_KEY, String(target));
   window.location.reload();
+});
+
+/**
+ * The row stays hidden unless push can actually work here, so we never offer a
+ * switch that silently does nothing.
+ */
+async function setupPushToggle(uid: string): Promise<void> {
+  const row = pushToggle.closest('.setting-row');
+  if (!(await pushSupported())) {
+    row?.setAttribute('hidden', '');
+    return;
+  }
+  row?.removeAttribute('hidden');
+  const wanted = localStorage.getItem(PUSH_PREFERENCE_KEY) === 'true' && Notification.permission === 'granted';
+  pushToggle.checked = wanted;
+  if (wanted) {
+    const failure = await enablePush(uid);
+    if (failure) {
+      pushToggle.checked = false;
+      localStorage.setItem(PUSH_PREFERENCE_KEY, 'false');
+    }
+  }
+  watchForegroundPush((message) => toast(message));
+}
+
+pushToggle.addEventListener('change', async () => {
+  if (!currentUser) return;
+  if (!pushToggle.checked) {
+    localStorage.setItem(PUSH_PREFERENCE_KEY, 'false');
+    await disablePush(currentUser.uid);
+    toast('已關閉推播通知。');
+    return;
+  }
+  pushToggle.disabled = true;
+  const failure = await enablePush(currentUser.uid);
+  pushToggle.disabled = false;
+  if (failure) {
+    pushToggle.checked = false;
+    localStorage.setItem(PUSH_PREFERENCE_KEY, 'false');
+    toast(failure, 'error');
+    return;
+  }
+  localStorage.setItem(PUSH_PREFERENCE_KEY, 'true');
+  toast('已開啟推播，關閉頁面後也會收到新訊息通知。');
 });
 
 function setSidebar(open: boolean): void {
@@ -301,10 +378,16 @@ onAuthStateChanged(auth, (user: User | null) => {
     accountName.textContent = user.displayName || '匿名使用者';
     accountEmail.textContent = user.email || '';
     accountAvatar.textContent = initialOf(user.displayName || user.email);
-    trackWrite(setDoc(doc(firestore, 'users', user.uid), { displayName: user.displayName || '匿名使用者' }, { merge: true }));
+    trackWrite(setDoc(doc(firestore, 'users', user.uid), {
+      displayName: user.displayName || '匿名使用者',
+      ...(user.photoURL ? { photoURL: user.photoURL } : {}),
+    }, { merge: true }));
+    watchUsers();
     watchRooms();
     watchRoomStates();
     setupPresence(user);
+    void setupPushToggle(user.uid);
+    void openRequestedRoom();
   } else if (!loggingOut) {
     cleanupSession();
     authView.hidden = false;
@@ -316,13 +399,18 @@ function cleanupSession(): void {
   messageUnsub?.();
   roomUnsub?.();
   roomStateUnsub?.();
-  messageUnsub = roomUnsub = roomStateUnsub = null;
+  readReceiptUnsub?.();
+  usersUnsub?.();
+  messageUnsub = roomUnsub = roomStateUnsub = readReceiptUnsub = usersUnsub = null;
   cleanupTyping();
   cleanupPresence();
+  stopForegroundPush();
   currentRoom = '';
   rooms.clear();
   messages.clear();
   roomReadStates.clear();
+  readReceipts.clear();
+  userProfiles.clear();
   messageList.replaceChildren();
 }
 
@@ -343,6 +431,91 @@ function watchRoomStates(): void {
   }, () => toast('無法載入未讀狀態。', 'error'));
 }
 
+function watchUsers(): void {
+  usersUnsub?.();
+  usersUnsub = onSnapshot(collection(firestore, 'users'), (snapshot) => {
+    userProfiles = new Map(snapshot.docs.map((userDoc) => [userDoc.id, userDoc.data() as UserProfile]));
+    refreshAvatars();
+  }, () => { /* avatars fall back to initials */ });
+}
+
+/**
+ * Renders a photo when the user has one, initials otherwise. A broken photo URL
+ * falls back to initials rather than leaving an empty circle.
+ */
+function paintAvatar(node: HTMLElement, uid: string | undefined, name: string): void {
+  const photo = uid ? userProfiles.get(uid)?.photoURL : undefined;
+  const initials = initialOf(name);
+  if (!photo) {
+    node.classList.remove('has-photo');
+    node.replaceChildren(document.createTextNode(initials));
+    return;
+  }
+  const existing = node.querySelector('img');
+  if (existing?.src === photo) return;
+  const image = document.createElement('img');
+  image.src = photo;
+  image.alt = '';
+  image.loading = 'lazy';
+  image.referrerPolicy = 'no-referrer';
+  image.addEventListener('error', () => {
+    node.classList.remove('has-photo');
+    node.replaceChildren(document.createTextNode(initials));
+  }, { once: true });
+  node.classList.add('has-photo');
+  node.replaceChildren(image);
+}
+
+function refreshAvatars(): void {
+  for (const row of messageList.querySelectorAll<HTMLElement>('[data-message-id]')) {
+    const message = messages.get(row.dataset.messageId ?? '');
+    const node = row.querySelector<HTMLElement>('.avatar');
+    if (message && node) paintAvatar(node, message.uid, message.user);
+  }
+  if (currentUser) paintAvatar(accountAvatar, currentUser.uid, currentUser.displayName || currentUser.email || '');
+  renderPresence();
+}
+
+function watchReadReceipts(roomId: string): void {
+  readReceiptUnsub?.();
+  readReceipts.clear();
+  readReceiptUnsub = onSnapshot(collection(firestore, 'rooms', roomId, 'readStates'), (snapshot) => {
+    if (roomId !== currentRoom) return;
+    readReceipts = new Map(snapshot.docs.map((stateDoc) => [stateDoc.id, stateDoc.data() as RoomReadState]));
+    refreshReadReceipts();
+  }, () => toast('無法載入已讀狀態。', 'error'));
+}
+
+/**
+ * A message counts as read by someone once their lastReadAt is at or past the
+ * message timestamp. The sender is never counted as a reader of their own message.
+ */
+function readCountFor(message: ChatMessage): number {
+  const sentAt = message.timestamp?.toMillis?.();
+  if (sentAt == null) return 0;
+  let count = 0;
+  for (const [uid, state] of readReceipts) {
+    if (uid === message.uid) continue;
+    const readAt = state.lastReadAt?.toMillis?.();
+    if (readAt != null && readAt >= sentAt) count += 1;
+  }
+  return count;
+}
+
+function paintReadReceipt(row: HTMLElement, message: ChatMessage): void {
+  const node = row.querySelector<HTMLElement>('[data-role="read"]');
+  if (!node) return;
+  const count = message.uid === currentUser?.uid && !message.pending ? readCountFor(message) : 0;
+  node.textContent = count > 1 ? `已讀 ${count}` : count === 1 ? '已讀' : '';
+}
+
+function refreshReadReceipts(): void {
+  for (const row of messageList.querySelectorAll<HTMLElement>('.message-row.you[data-message-id]')) {
+    const message = messages.get(row.dataset.messageId ?? '');
+    if (message) paintReadReceipt(row, message);
+  }
+}
+
 function renderRooms(): void {
   const sorted = [...rooms.values()].sort((a, b) => {
     const aTime = a.updatedAt?.toMillis?.() ?? a.createdAt?.toMillis?.() ?? 0;
@@ -351,7 +524,127 @@ function renderRooms(): void {
   });
   roomCount.textContent = String(sorted.length);
   roomList.replaceChildren(...sorted.map(createRoomButton));
+  renderChatHeads();
 }
+
+function isUnread(room: RoomPreview): boolean {
+  if (room.id === currentRoom) return false;
+  const readState = roomReadStates.get(room.id);
+  return Boolean(room.lastMessage?.id && room.lastMessage.id !== readState?.lastReadMessageId);
+}
+
+function renderChatHeads(): void {
+  const unread = [...rooms.values()]
+    .filter(isUnread)
+    .sort((a, b) => (b.updatedAt?.toMillis?.() ?? 0) - (a.updatedAt?.toMillis?.() ?? 0));
+  chatHeads.hidden = unread.length === 0;
+  if (!unread.length) {
+    chatHeads.replaceChildren();
+    return;
+  }
+  const shown = unread.slice(0, MAX_CHAT_HEADS);
+  const nodes: HTMLElement[] = shown.map((room) => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'chat-head';
+    button.dataset.roomId = room.id;
+    button.title = `${room.id}：${room.lastMessage?.text ? truncate(room.lastMessage.text, 40) : '新訊息'}`;
+    button.setAttribute('aria-label', `開啟聊天室 ${room.id}，有未讀訊息`);
+    const face = document.createElement('span');
+    face.className = 'chat-head-face';
+    paintAvatar(face, room.lastMessage?.uid, room.lastMessage?.user || room.id);
+    const badge = document.createElement('span');
+    badge.className = 'chat-head-badge';
+    badge.setAttribute('aria-hidden', 'true');
+    const name = document.createElement('span');
+    name.className = 'chat-head-name';
+    name.textContent = room.id;
+    button.append(face, badge, name);
+    button.addEventListener('click', () => {
+      // A drag ends with a click event on the bubble; ignore it so dragging the
+      // stack around never opens a room by accident.
+      if (Date.now() - lastChatHeadDragEnd < 250) return;
+      void openRoom(room.id);
+    });
+    return button;
+  });
+  if (unread.length > shown.length) {
+    const more = document.createElement('span');
+    more.className = 'chat-head-more';
+    more.textContent = `+${unread.length - shown.length}`;
+    nodes.push(more);
+  }
+  chatHeads.replaceChildren(...nodes);
+  applyChatHeadsPosition();
+}
+
+function applyChatHeadsPosition(): void {
+  if (!chatHeadsPos) return;
+  const rect = chatHeads.getBoundingClientRect();
+  const maxX = Math.max(CHAT_HEAD_MARGIN, window.innerWidth - rect.width - CHAT_HEAD_MARGIN);
+  const maxY = Math.max(CHAT_HEAD_MARGIN, window.innerHeight - rect.height - CHAT_HEAD_MARGIN);
+  chatHeads.style.left = `${Math.min(Math.max(CHAT_HEAD_MARGIN, chatHeadsPos.x), maxX)}px`;
+  chatHeads.style.top = `${Math.min(Math.max(CHAT_HEAD_MARGIN, chatHeadsPos.y), maxY)}px`;
+  chatHeads.style.right = 'auto';
+  chatHeads.style.bottom = 'auto';
+}
+
+function snapChatHeads(): void {
+  if (!chatHeadsPos) return;
+  const rect = chatHeads.getBoundingClientRect();
+  const centre = rect.left + rect.width / 2;
+  const maxY = Math.max(CHAT_HEAD_MARGIN, window.innerHeight - rect.height - CHAT_HEAD_MARGIN);
+  // Persist the clamped position, not the raw pointer position: dragging past the
+  // edge would otherwise store an off-screen value that survives reloads.
+  chatHeadsPos = {
+    x: centre < window.innerWidth / 2 ? CHAT_HEAD_MARGIN : window.innerWidth - rect.width - CHAT_HEAD_MARGIN,
+    y: Math.min(Math.max(CHAT_HEAD_MARGIN, chatHeadsPos.y), maxY),
+  };
+  applyChatHeadsPosition();
+  try {
+    localStorage.setItem(CHAT_HEADS_KEY, JSON.stringify(chatHeadsPos));
+  } catch { /* private mode: position just is not remembered */ }
+}
+
+chatHeads.addEventListener('pointerdown', (event) => {
+  if (event.button !== 0) return;
+  const rect = chatHeads.getBoundingClientRect();
+  chatHeadsDrag = {
+    pointerId: event.pointerId,
+    offsetX: event.clientX - rect.left,
+    offsetY: event.clientY - rect.top,
+    startX: event.clientX,
+    startY: event.clientY,
+    moved: false,
+  };
+  chatHeads.setPointerCapture(event.pointerId);
+});
+
+chatHeads.addEventListener('pointermove', (event) => {
+  if (!chatHeadsDrag || event.pointerId !== chatHeadsDrag.pointerId) return;
+  if (!chatHeadsDrag.moved) {
+    if (Math.hypot(event.clientX - chatHeadsDrag.startX, event.clientY - chatHeadsDrag.startY) < 5) return;
+    chatHeadsDrag.moved = true;
+    chatHeads.classList.add('dragging');
+  }
+  chatHeadsPos = { x: event.clientX - chatHeadsDrag.offsetX, y: event.clientY - chatHeadsDrag.offsetY };
+  applyChatHeadsPosition();
+});
+
+function endChatHeadDrag(event: PointerEvent): void {
+  if (!chatHeadsDrag || event.pointerId !== chatHeadsDrag.pointerId) return;
+  const { moved } = chatHeadsDrag;
+  if (chatHeads.hasPointerCapture(event.pointerId)) chatHeads.releasePointerCapture(event.pointerId);
+  chatHeads.classList.remove('dragging');
+  chatHeadsDrag = null;
+  if (!moved) return;
+  lastChatHeadDragEnd = Date.now();
+  snapChatHeads();
+}
+
+chatHeads.addEventListener('pointerup', endChatHeadDrag);
+chatHeads.addEventListener('pointercancel', endChatHeadDrag);
+window.addEventListener('resize', applyChatHeadsPosition);
 
 function createRoomButton(room: RoomPreview): HTMLButtonElement {
   const button = document.createElement('button');
@@ -372,9 +665,7 @@ function createRoomButton(room: RoomPreview): HTMLButtonElement {
   copy.append(title, preview);
   button.append(initial, copy);
 
-  const readState = roomReadStates.get(room.id);
-  const unread = room.id !== currentRoom && Boolean(room.lastMessage?.id && room.lastMessage.id !== readState?.lastReadMessageId);
-  if (unread) {
+  if (isUnread(room)) {
     const dot = document.createElement('span');
     dot.className = 'unread-dot';
     dot.title = '有未讀訊息';
@@ -421,7 +712,9 @@ async function openRoom(roomId: string): Promise<void> {
   }
   cleanupTyping();
   messageUnsub?.();
-  messageUnsub = null;
+  readReceiptUnsub?.();
+  messageUnsub = readReceiptUnsub = null;
+  readReceipts.clear();
   currentRoom = roomId;
   messages.clear();
   pendingMessageIds.clear();
@@ -442,6 +735,7 @@ async function openRoom(roomId: string): Promise<void> {
   renderRooms();
   setSidebar(false);
   setupTyping(roomId);
+  watchReadReceipts(roomId);
 
   const latestQuery = query(
     collection(firestore, 'rooms', roomId, 'messages'),
@@ -471,6 +765,22 @@ async function openRoom(roomId: string): Promise<void> {
     if (latest) markRoomRead(roomId, latest.id);
   }, () => toast('訊息同步中斷，請重新選擇聊天室。', 'error'));
 }
+
+/** Opens the room a push notification pointed at, then drops the parameter so a
+ *  later refresh does not keep yanking the user back to it. */
+async function openRequestedRoom(): Promise<void> {
+  const requested = new URLSearchParams(window.location.search).get('room');
+  if (!requested) return;
+  const url = new URL(window.location.href);
+  url.searchParams.delete('room');
+  window.history.replaceState(null, '', url);
+  await openRoom(requested);
+}
+
+navigator.serviceWorker?.addEventListener('message', (event) => {
+  const data = recordOf(event.data);
+  if (data.type === 'open-room' && typeof data.roomId === 'string') void openRoom(data.roomId);
+});
 
 loadOlderBtn.addEventListener('click', async () => {
   if (!currentRoom || !oldestCursor) return;
@@ -507,7 +817,7 @@ function createMessageRow(message: ChatMessage): HTMLElement {
 
   const avatar = document.createElement('div');
   avatar.className = 'avatar';
-  avatar.textContent = initialOf(message.user);
+  paintAvatar(avatar, message.uid, message.user);
   const profile = document.createElement('div');
   profile.className = 'message-profile';
   const wrap = document.createElement('div');
@@ -528,12 +838,17 @@ function createMessageRow(message: ChatMessage): HTMLElement {
   time.dataset.role = 'time';
   const sync = document.createElement('span');
   sync.dataset.role = 'sync';
-  meta.append(time, sync);
+  const read = document.createElement('span');
+  read.dataset.role = 'read';
+  meta.append(time, sync, read);
   const actions = document.createElement('div');
   actions.className = 'message-actions';
   actions.append(actionButton('回覆', () => setReply(message.id)));
   if (message.uid === currentUser?.uid) {
-    actions.append(actionButton('編輯', () => startEdit(message.id)), actionButton('刪除', () => void requestDelete(message.id)));
+    actions.append(
+      actionButton('編輯', () => startEdit(message.id)),
+      actionButton('刪除', () => void requestDelete(message.id), 'danger'),
+    );
   }
   profile.append(avatar, author);
   bubble.append(quote, text, meta);
@@ -543,9 +858,10 @@ function createMessageRow(message: ChatMessage): HTMLElement {
   return row;
 }
 
-function actionButton(label: string, action: () => void): HTMLButtonElement {
+function actionButton(label: string, action: () => void, variant?: 'danger'): HTMLButtonElement {
   const button = document.createElement('button');
   button.type = 'button';
+  if (variant) button.className = variant;
   button.textContent = label;
   button.addEventListener('click', action);
   return button;
@@ -576,6 +892,7 @@ function patchMessageElement(row: HTMLElement, message: ChatMessage): void {
   row.querySelector<HTMLElement>('.message-text')!.textContent = message.text;
   row.querySelector<HTMLElement>('[data-role="time"]')!.textContent = `${formatMessageTime(message)}${message.editedAt ? ' · 已編輯' : ''}`;
   row.querySelector<HTMLElement>('[data-role="sync"]')!.textContent = message.pending ? '待同步' : '';
+  paintReadReceipt(row, message);
   const quote = row.querySelector<HTMLElement>('.reply-quote')!;
   if (!message.replyToId) {
     quote.hidden = true;
@@ -840,7 +1157,7 @@ function renderPresence(): void {
     item.className = 'presence-item';
     const avatar = document.createElement('div');
     avatar.className = 'presence-avatar';
-    avatar.textContent = initialOf(user.displayName);
+    paintAvatar(avatar, user.uid, user.displayName);
     const copy = document.createElement('div');
     copy.className = 'presence-copy';
     const name = document.createElement('strong');
@@ -882,7 +1199,7 @@ function cleanupTyping(): void {
   typingConnectionRef = null;
   legacyTyping = {};
   v2Typing = {};
-  typingIndicator.textContent = '';
+  typingIndicator.replaceChildren();
 }
 
 function sendTyping(): void {
@@ -913,7 +1230,21 @@ function renderTyping(): void {
     }
   }
   const list = [...names];
-  typingIndicator.textContent = list.length ? `${list.join('、')} 正在輸入…` : '';
+  typingIndicator.replaceChildren();
+  if (!list.length) return;
+  const chip = document.createElement('span');
+  chip.className = 'typing-chip';
+  const dots = document.createElement('span');
+  dots.className = 'typing-dots';
+  dots.setAttribute('aria-hidden', 'true');
+  dots.append(document.createElement('i'), document.createElement('i'), document.createElement('i'));
+  const label = document.createElement('span');
+  label.className = 'typing-label';
+  label.textContent = list.length > 2
+    ? `${list.slice(0, 2).join('、')} 等 ${list.length} 人正在輸入`
+    : `${list.join('、')} 正在輸入`;
+  chip.append(dots, label);
+  typingIndicator.append(chip);
 }
 
 window.addEventListener('beforeunload', (event) => {
@@ -921,6 +1252,17 @@ window.addEventListener('beforeunload', (event) => {
     event.preventDefault();
     event.returnValue = '';
   }
+});
+
+/**
+ * onDisconnect alone leaves us online for however long the Realtime Database takes
+ * to notice the socket died (tens of seconds). Releasing the connection node on
+ * pagehide makes departures show up on other clients immediately. pagehide fires on
+ * mobile Safari/Chrome where beforeunload does not.
+ */
+window.addEventListener('pagehide', () => {
+  if (typingConnectionRef) void remove(typingConnectionRef);
+  if (presenceConnectionRef) void remove(presenceConnectionRef);
 });
 
 if ('serviceWorker' in navigator) {

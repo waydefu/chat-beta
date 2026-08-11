@@ -48,6 +48,7 @@
         <div class="sidebar-footer">
           <label class="setting-row" for="theme-toggle"><span>深色模式</span><input id="theme-toggle" type="checkbox" /></label>
           <label class="setting-row" for="offline-toggle"><span>可信裝置離線資料</span><input id="offline-toggle" type="checkbox" /></label>
+          <label class="setting-row" for="push-toggle" hidden><span>關閉頁面時通知我</span><input id="push-toggle" type="checkbox" /></label>
         </div>
       </aside>
       <button id="sidebar-scrim" class="sidebar-scrim" type="button" aria-label="關閉聊天室列表" hidden></button>
@@ -110,6 +111,8 @@
           <button id="logout-btn" class="icon-btn" type="button" aria-label="登出">↪</button>
         </div>
       </aside>
+
+      <div id="chat-heads" class="chat-heads" role="group" aria-label="未讀訊息懸浮氣泡" hidden></div>
     </main>
 
     <dialog id="confirm-dialog" class="confirm-dialog">

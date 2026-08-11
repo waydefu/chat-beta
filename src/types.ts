@@ -32,6 +32,11 @@ export interface RoomReadState {
   lastReadMessageId?: string;
 }
 
+export interface UserProfile {
+  displayName?: string;
+  photoURL?: string;
+}
+
 export interface OnlineUser {
   uid: string;
   displayName: string;
