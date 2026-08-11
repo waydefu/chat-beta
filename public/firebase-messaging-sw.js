@@ -1,5 +1,5 @@
 const CACHE_PREFIX = 'chat-lite-';
-const CURRENT_CACHE = 'chat-lite-v3-shell';
+const CURRENT_CACHE = 'chat-lite-v4-shell';
 const BASE_PATH = '/chat-beta/';
 const SHELL = [
   BASE_PATH,
@@ -7,8 +7,10 @@ const SHELL = [
   `${BASE_PATH}privacy.html`,
   `${BASE_PATH}terms.html`,
   `${BASE_PATH}manifest.webmanifest`,
-  `${BASE_PATH}image/logo.png`,
+  `${BASE_PATH}image/logo-v2.png`,
   `${BASE_PATH}image/chat-background.webp`,
+  `${BASE_PATH}image/chat-light.webp`,
+  `${BASE_PATH}image/chat-dark.webp`,
 ];
 
 self.addEventListener('install', (event) => {

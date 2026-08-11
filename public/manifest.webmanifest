@@ -10,8 +10,8 @@
   "theme_color": "#08142d",
   "icons": [
     {
-      "src": "/chat-beta/image/logo.png",
-      "sizes": "260x260",
+      "src": "/chat-beta/image/logo-v2.png",
+      "sizes": "512x512",
       "type": "image/png",
       "purpose": "any"
     }

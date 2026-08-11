@@ -123,7 +123,19 @@ button:active:not(:disabled){transform:scale(.97)}
 .setting-row input:checked::after{transform:translateX(16px)}
 .setting-row input:focus-visible{outline:3px solid #4169e82f;outline-offset:2px}
 
-.conversation{position:relative;background:linear-gradient(180deg,var(--surface-2),color-mix(in srgb,var(--surface-2) 76%,var(--surface)))}
+.conversation{
+  position:relative;
+  background:
+    linear-gradient(180deg,#f4f7fbcf,#ffffffb8),
+    url('/image/chat-light.webp') center/cover fixed,
+    var(--surface-2);
+}
+:root[data-theme=dark] .conversation{
+  background:
+    linear-gradient(180deg,#0b1323d6,#0b1323bd),
+    url('/image/chat-dark.webp') center/cover fixed,
+    var(--surface-2);
+}
 .chat-header{height:78px;padding:0 24px;border-bottom-color:color-mix(in srgb,var(--line) 80%,transparent);background:color-mix(in srgb,var(--surface) 88%,transparent);backdrop-filter:blur(18px) saturate(1.1)}
 .chat-heading h1{font-size:1.08rem;letter-spacing:-.025em}
 .chat-heading p{width:max-content;margin-top:5px;padding:3px 7px 3px 5px;border-radius:999px;background:var(--surface-2)}
@@ -243,7 +255,7 @@ button:active:not(:disabled){transform:scale(.97)}
 .auth-view::before{animation:orb-drift 18s ease-in-out infinite alternate}
 .auth-view::after{animation:orb-drift 22s ease-in-out -7s infinite alternate-reverse}
 .app-shell:not([hidden]) .sidebar{animation:panel-enter-left .42s cubic-bezier(.2,.8,.2,1) both}
-.app-shell:not([hidden]) .conversation{animation:content-enter .38s ease-out .05s both}
+.app-shell:not([hidden]) .conversation{animation:content-enter .38s ease-out .05s both,conversation-background-drift 34s ease-in-out 1s infinite alternate}
 .app-shell:not([hidden]) .presence-panel{animation:panel-enter-right .42s cubic-bezier(.2,.8,.2,1) .08s both}
 .message-row{animation:message-enter .26s cubic-bezier(.2,.8,.2,1) both;transform-origin:bottom left}
 .message-row.you{transform-origin:bottom right}
@@ -277,6 +289,10 @@ button:active:not(:disabled){transform:scale(.97)}
 @keyframes content-enter{
   from{opacity:0;transform:translateY(8px)}
   to{opacity:1;transform:none}
+}
+@keyframes conversation-background-drift{
+  from{background-position:center,49% 50%}
+  to{background-position:center,51% 48%}
 }
 @keyframes message-enter{
   from{opacity:0;transform:translateY(8px) scale(.985)}
