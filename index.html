@@ -1,65 +1,125 @@
-<!DOCTYPE html>
-<html lang="zh-TW">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Chat Lite - 旗艦版</title>
-  <link rel="stylesheet" href="/chat-beta/style.css">
-  <link rel="icon" type="image/png" href="/chat-beta/image/favicon.png"> 
-</head>
-<body>
-  <div class="login-wrapper" role="main">
-    <div class="login-card auth-section" id="login-card">
-      <img src="/chat-beta/image/logo.png" alt="Chat Lite 標誌" class="avatar-placeholder-img">
-      <h1 class="title">歡迎來到 Chat Lite 旗艦版</h1>
-      <p id="user-info" class="subtitle"></p>
-      <button id="login-btn" class="google-btn" aria-label="使用 Google 登入">使用 Google 登入</button>
-      <p class="terms">登入即同意<a href="/terms.html" target="_blank">服務條款</a>。</p>
-    </div>
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#08142d" />
+    <meta name="description" content="Chat Lite — 簡潔、即時且尊重隱私的聊天室。" />
+    <link rel="icon" type="image/png" href="./image/logo.png" />
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <title>Chat Lite</title>
+  </head>
+  <body>
+    <div id="toast-region" class="toast-region" aria-live="polite"></div>
 
-    <div id="chat-section" class="chat-section" style="display:none;">
-      <header>
-        <button id="logout-btn" class="google-btn" style="display:none;">登出</button>
-        <h2 class="chat-title">聊天室</h2>
-      </header>
+    <main id="auth-view" class="auth-view">
+      <section class="auth-card" aria-labelledby="auth-title">
+        <img class="brand-mark" src="./image/logo.png" alt="" width="104" height="104" />
+        <p class="eyebrow">CHAT LITE · 2.0</p>
+        <h1 id="auth-title">讓對話保持簡單</h1>
+        <p class="auth-copy">登入後加入聊天室，訊息會在你的裝置間即時同步。</p>
+        <button id="login-btn" class="primary-btn auth-btn" type="button">
+          <span aria-hidden="true">G</span> 使用 Google 登入
+        </button>
+        <p class="legal-copy">登入即表示你同意<a href="./terms.html">服務條款</a>與<a href="./privacy.html">隱私說明</a>。</p>
+      </section>
+    </main>
 
-      <div class="room-section">
-        <div class="custom-select" id="room-list-wrapper">
-          <button class="select-btn" id="room-select-btn">
-            <span class="select-text">選擇聊天室</span>
-            <span class="select-icon">▼</span>
-          </button>
-          <ul class="select-options" id="room-list-options">
-            <li data-room="" class="option disabled selected">選擇聊天室</li>
-          </ul>
+    <main id="app-view" class="app-shell" hidden>
+      <aside id="room-sidebar" class="sidebar" aria-label="聊天室列表">
+        <div class="brand-row">
+          <img src="./image/logo.png" alt="" width="42" height="42" />
+          <div><strong>Chat Lite</strong><span>即時聊天室</span></div>
+          <button id="close-sidebar-btn" class="icon-btn mobile-only" type="button" aria-label="關閉聊天室列表">×</button>
         </div>
-        
-        <input type="text" id="room-name" placeholder="輸入新房間名稱..." maxlength="50" aria-label="輸入聊天室名稱">
-        <button id="join-room" aria-label="加入聊天室">加入 / 建立</button>
-      </div>
 
-      <div class="chat-container">
-        <div id="chat-box" class="chat-box" role="log" aria-live="polite"></div>
-        
-        <div class="message-input-wrapper">
-          <div class="message-input-indicator">
-            <p id="typing-indicator"></p>
+        <div class="room-create">
+          <label for="room-name">建立或加入聊天室</label>
+          <div class="inline-form">
+            <input id="room-name" maxlength="50" autocomplete="off" placeholder="例如：週末計畫" />
+            <button id="join-room-btn" class="square-btn" type="button" aria-label="建立或加入聊天室">＋</button>
           </div>
-          <div class="message-input-container">
-            <textarea id="message-input" placeholder="輸入訊息..." maxlength="1000" aria-label="輸入訊息"></textarea>
-            <button id="send-btn" aria-label="送出訊息">送出</button>
+          <p id="room-error" class="field-error" role="alert"></p>
+        </div>
+
+        <div class="room-list-heading"><span>聊天室</span><span id="room-count">0</span></div>
+        <nav id="room-list" class="room-list" aria-label="可用聊天室"></nav>
+
+        <div class="sidebar-footer">
+          <label class="setting-row" for="theme-toggle"><span>深色模式</span><input id="theme-toggle" type="checkbox" /></label>
+          <label class="setting-row" for="offline-toggle"><span>可信裝置離線資料</span><input id="offline-toggle" type="checkbox" /></label>
+        </div>
+      </aside>
+      <button id="sidebar-scrim" class="sidebar-scrim" type="button" aria-label="關閉聊天室列表" hidden></button>
+
+      <section class="conversation" aria-label="聊天室內容">
+        <header class="chat-header">
+          <button id="open-sidebar-btn" class="icon-btn mobile-only" type="button" aria-label="開啟聊天室列表">☰</button>
+          <div class="chat-heading">
+            <h1 id="current-room-title">選擇聊天室</h1>
+            <p id="connection-status"><span class="status-dot"></span>準備連線</p>
           </div>
+          <div class="header-actions">
+            <button id="search-toggle-btn" class="icon-btn" type="button" aria-label="搜尋已載入訊息">⌕</button>
+            <button id="members-toggle-btn" class="icon-btn" type="button" aria-label="顯示在線使用者">◎</button>
+          </div>
+        </header>
+
+        <div id="search-bar" class="search-bar" hidden>
+          <label class="sr-only" for="message-search">搜尋已載入訊息</label>
+          <input id="message-search" type="search" placeholder="搜尋已載入的訊息…" />
+          <button id="close-search-btn" class="text-btn" type="button">關閉</button>
         </div>
-        
-        <div id="presence-list" class="presence-list">
-          <h3>🟢 在線使用者</h3>
+
+        <div id="empty-state" class="empty-state">
+          <span aria-hidden="true">✦</span>
+          <h2>選一個聊天室開始對話</h2>
+          <p>也可以從左側建立新的聊天室。</p>
         </div>
-      </div>
-      
-      <footer>© 2025 Chat Lite. <a href="/privacy.html" target="_blank">隱私政策</a></footer>
-    </div>
-  </div>
-  
-  <script type="module" src="/chat-beta/main.js" defer></script>
-</body>
+
+        <div id="message-view" class="message-view" hidden>
+          <button id="load-older-btn" class="load-older" type="button">載入更早訊息</button>
+          <div id="message-list" class="message-list" role="log" aria-live="polite" aria-relevant="additions text"></div>
+        </div>
+
+        <div class="composer-shell">
+          <p id="typing-indicator" class="typing-indicator" aria-live="polite"></p>
+          <div id="reply-banner" class="reply-banner" hidden>
+            <div><span>回覆</span><strong id="reply-summary"></strong></div>
+            <button id="cancel-reply-btn" class="icon-btn" type="button" aria-label="取消回覆">×</button>
+          </div>
+          <div id="edit-banner" class="reply-banner edit-banner" hidden>
+            <div><span>正在編輯</span><strong>更新後不會改變原始時間</strong></div>
+            <button id="cancel-edit-btn" class="icon-btn" type="button" aria-label="取消編輯">×</button>
+          </div>
+          <div class="composer">
+            <label class="sr-only" for="message-input">輸入訊息</label>
+            <textarea id="message-input" maxlength="1000" rows="1" placeholder="先選擇聊天室…" disabled></textarea>
+            <button id="send-btn" class="send-btn" type="button" disabled aria-label="送出訊息">➤</button>
+          </div>
+          <div class="composer-meta"><span>Enter 送出 · Shift + Enter 換行</span><span id="message-counter">0 / 1000</span></div>
+        </div>
+      </section>
+
+      <aside id="presence-panel" class="presence-panel" aria-label="在線使用者">
+        <div class="panel-heading"><div><strong>在線使用者</strong><span id="presence-count">0 位在線</span></div><button id="close-members-btn" class="icon-btn" type="button" aria-label="關閉在線使用者">×</button></div>
+        <div id="presence-list" class="presence-list"></div>
+        <div class="account-card">
+          <div id="account-avatar" class="account-avatar"></div>
+          <div><strong id="account-name"></strong><span id="account-email"></span></div>
+          <button id="logout-btn" class="icon-btn" type="button" aria-label="登出">↪</button>
+        </div>
+      </aside>
+    </main>
+
+    <dialog id="confirm-dialog" class="confirm-dialog">
+      <form method="dialog">
+        <h2 id="confirm-title">確認操作</h2>
+        <p id="confirm-copy"></p>
+        <div class="dialog-actions"><button value="cancel" class="secondary-btn">取消</button><button id="confirm-action-btn" value="confirm" class="danger-btn">確認</button></div>
+      </form>
+    </dialog>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
 </html>

@@ -1,0 +1,19 @@
+{
+  "name": "Chat Lite",
+  "short_name": "Chat Lite",
+  "description": "簡潔、即時且尊重隱私的聊天室。",
+  "lang": "zh-TW",
+  "start_url": "/chat-beta/",
+  "scope": "/chat-beta/",
+  "display": "standalone",
+  "background_color": "#08142d",
+  "theme_color": "#08142d",
+  "icons": [
+    {
+      "src": "/chat-beta/image/logo.png",
+      "sizes": "260x260",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}

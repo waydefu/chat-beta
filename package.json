@@ -1,0 +1,28 @@
+{
+  "name": "chat-lite",
+  "version": "2.0.0",
+  "private": true,
+  "packageManager": "pnpm@11.9.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "test:rules": "firebase emulators:exec --project demo-chat-lite --only firestore,database \"vitest run --config vitest.rules.config.ts\"",
+    "check": "pnpm lint && pnpm test && pnpm build"
+  },
+  "dependencies": {
+    "firebase": "^12.1.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.32.0",
+    "@firebase/rules-unit-testing": "^5.0.0",
+    "@types/node": "^24.2.1",
+    "eslint": "^9.32.0",
+    "typescript": "^5.9.2",
+    "typescript-eslint": "^8.39.0",
+    "vite": "^7.1.1",
+    "vitest": "^3.2.4"
+  }
+}

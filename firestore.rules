@@ -1,0 +1,122 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function validText(value, maximum) {
+      return value is string && value.size() > 0 && value.size() <= maximum;
+    }
+
+    function optionalString(data, key, maximum) {
+      return !data.keys().hasAny([key]) || (data[key] is string && data[key].size() <= maximum);
+    }
+
+    function validMessageCreate(data) {
+      return data.keys().hasAll(['uid', 'user', 'text', 'timestamp'])
+        && data.keys().hasOnly(['uid', 'user', 'text', 'timestamp', 'readBy', 'clientCreatedAt', 'replyToId'])
+        && data.uid == request.auth.uid
+        && validText(data.user, 100)
+        && validText(data.text, 1000)
+        && data.timestamp == request.time
+        && optionalString(data, 'replyToId', 150)
+        && (!data.keys().hasAny(['clientCreatedAt']) || data.clientCreatedAt is number)
+        && (!data.keys().hasAny(['readBy']) || (
+          data.readBy is list
+          && data.readBy.size() == 1
+          && data.readBy[0] == request.auth.uid
+        ));
+    }
+
+    function validLegacyReadReceipt() {
+      return resource.data.keys().hasAny(['readBy'])
+        && resource.data.readBy is list
+        && request.resource.data.readBy is list
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['readBy'])
+        && request.resource.data.readBy.size() <= resource.data.readBy.size() + 1
+        && request.resource.data.readBy.hasAll(resource.data.readBy)
+        && request.resource.data.readBy.hasAny([request.auth.uid]);
+    }
+
+    function validLastMessage(data) {
+      return !data.keys().hasAny(['lastMessage']) || (
+        data.lastMessage is map
+        && data.lastMessage.keys().hasAll(['id', 'uid', 'user', 'text', 'timestamp'])
+        && data.lastMessage.keys().hasOnly(['id', 'uid', 'user', 'text', 'timestamp'])
+        && validText(data.lastMessage.id, 150)
+        && data.lastMessage.uid == request.auth.uid
+        && validText(data.lastMessage.user, 100)
+        && validText(data.lastMessage.text, 120)
+        && data.lastMessage.timestamp == request.time
+      );
+    }
+
+    function validReadState(data) {
+      return data.keys().hasAll(['lastReadAt', 'lastReadMessageId', 'updatedAt'])
+        && data.keys().hasOnly(['lastReadAt', 'lastReadMessageId', 'updatedAt'])
+        && data.lastReadAt == request.time
+        && data.updatedAt == request.time
+        && validText(data.lastReadMessageId, 150);
+    }
+
+    match /rooms/{roomId} {
+      allow read: if signedIn();
+      allow create: if signedIn()
+        && request.resource.data.keys().hasAll(['createdAt'])
+        && request.resource.data.keys().hasOnly(['createdAt', 'createdBy', 'updatedAt', 'lastMessage'])
+        && request.resource.data.createdAt == request.time
+        && (!request.resource.data.keys().hasAny(['createdBy']) || request.resource.data.createdBy == request.auth.uid)
+        && (!request.resource.data.keys().hasAny(['updatedAt']) || request.resource.data.updatedAt == request.time)
+        && validLastMessage(request.resource.data);
+      allow update: if signedIn()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['createdAt', 'updatedAt', 'lastMessage'])
+        && (!request.resource.data.keys().hasAny(['updatedAt']) || request.resource.data.updatedAt == request.time)
+        && (!request.resource.data.keys().hasAny(['createdAt']) || request.resource.data.createdAt == request.time || request.resource.data.createdAt == resource.data.createdAt)
+        && validLastMessage(request.resource.data);
+      allow delete: if false;
+
+      match /messages/{messageId} {
+        allow read: if signedIn();
+        allow create: if signedIn() && validMessageCreate(request.resource.data);
+        allow update: if signedIn() && (
+          (
+            resource.data.uid == request.auth.uid
+            && request.resource.data.uid == resource.data.uid
+            && request.resource.data.user == resource.data.user
+            && request.resource.data.timestamp == resource.data.timestamp
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['text', 'editedAt'])
+            && request.resource.data.text != resource.data.text
+            && validText(request.resource.data.text, 1000)
+            && request.resource.data.editedAt == request.time
+          ) || validLegacyReadReceipt()
+        );
+        allow delete: if signedIn() && resource.data.uid == request.auth.uid;
+      }
+
+      match /readStates/{userId} {
+        allow read: if signedIn();
+        allow create, update: if signedIn() && request.auth.uid == userId && validReadState(request.resource.data);
+        allow delete: if signedIn() && request.auth.uid == userId;
+      }
+    }
+
+    match /users/{userId} {
+      allow read: if signedIn();
+      allow create: if signedIn() && request.auth.uid == userId
+        && request.resource.data.keys().hasOnly(['displayName'])
+        && validText(request.resource.data.displayName, 100);
+      allow update: if signedIn() && request.auth.uid == userId
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['displayName'])
+        && validText(request.resource.data.displayName, 100);
+      allow delete: if false;
+
+      match /roomStates/{roomId} {
+        allow read: if signedIn() && request.auth.uid == userId;
+        allow create, update: if signedIn() && request.auth.uid == userId && validReadState(request.resource.data);
+        allow delete: if signedIn() && request.auth.uid == userId;
+      }
+    }
+  }
+}
