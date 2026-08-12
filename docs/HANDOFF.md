@@ -14,7 +14,7 @@ This document records the production state after the Chat Lite 3.0 ACL rollout. 
 | Billing account | `017AC8-677C35-503670` |
 | Primary region | `asia-east1` |
 | Production branch | `main` |
-| Deployed commit | `bd58b8f0740ecb69e8cbf9473312564403163747` |
+| Deployed commit | `c279de26db238693cc9eff04d6fef2839ccb5220` |
 | App Check | reCAPTCHA Enterprise key configured; monitor before enforcement |
 | FCM | production VAPID key configured |
 
@@ -74,6 +74,7 @@ The following Node.js 22, second-generation Functions are live in `asia-east1`:
 - Firebase Hosting security headers and CSP are live.
 - Google Auth requires `https://apis.google.com` in `script-src`, and both `https://apis.google.com` and the auth domain `https://f-chat-wayde-fu.firebaseapp.com` in `frame-src`; removing any of them reproduces the login failure.
 - `Cross-Origin-Opener-Policy` is `same-origin-allow-popups` so the `signInWithPopup` window handle survives popup cancellation polling.
+- HTML is served with `Cache-Control: no-cache` so header and CSP changes reach returning browsers on the next request. Before this, HTML inherited the Hosting default `max-age=3600` and a cached document kept enforcing the previous CSP for up to an hour after a headers-only deploy.
 - Production source maps are built for diagnostics but excluded from Hosting uploads.
 - Core signed-in JavaScript is `199.80 kB` gzip under the production configuration.
 - Google Sign-In startup was browser-smoked after the CSP fix: no CSP console error, no `auth/internal-error`, and the Auth iframe was created.
@@ -84,6 +85,9 @@ The following Node.js 22, second-generation Functions are live in `asia-east1`:
 - PR #2: exclude source maps from Firebase Hosting uploads.
 - PR #3: allow the Google Auth API script in CSP.
 - PR #4: allow the Google Auth iframe in CSP.
+- PR #6: allow the Auth domain in CSP `frame-src` and set COOP for popups. This is the change that made Google Sign-In work; #3 and #4 were necessary but not sufficient.
+- PR #8: serve HTML with `no-cache`. Requires a Hosting deploy to take effect.
+- PR #9: upgrade deprecated GitHub Actions runtimes.
 - The quality-gate workflow passed on production commit `bd58b8f0740ecb69e8cbf9473312564403163747`, including lint, typecheck, unit coverage, Functions tests, Rules tests, E2E, build, and production audit.
 - The manual `Publish GitHub Pages redirect` workflow completed successfully for the previous production commit and the redirect remains live.
 
@@ -98,7 +102,7 @@ GitHub's `production` environment contains the public client configuration, incl
 
 Do not place these values in Markdown even though browser Firebase configuration, App Check site keys, and VAPID public keys are not server secrets.
 
-GitHub Workload Identity Federation is not yet configured, so the production rollout was performed manually from authenticated Google Cloud Shell. The deploy workflow must not be treated as unattended-ready until WIF provider, service account, IAM bindings, and GitHub environment secrets are configured and tested.
+GitHub Workload Identity Federation is not yet configured, so the production rollout was performed manually from authenticated Google Cloud Shell. The deploy workflow must not be treated as unattended-ready until WIF provider, service account, IAM bindings, and GitHub environment secrets are configured and tested. Step-by-step setup commands are in [WIF-SETUP](WIF-SETUP.md); progress is tracked in issue #7.
 
 ## Provider integrations not yet production-ready
 
