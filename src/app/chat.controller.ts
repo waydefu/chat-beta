@@ -33,6 +33,7 @@ import { compareMessages, formatMessageTime, initialOf, truncate } from '../util
 import { RoomScope, SessionScope } from './lifecycle';
 
 const THEME_KEY = 'chat-lite:theme';
+const DARK_QUERY = '(prefers-color-scheme: dark)';
 const REACTION_CHOICES = ['👍', '❤️', '😂'];
 
 function byId<T extends HTMLElement>(id: string): T {
@@ -150,6 +151,14 @@ function toast(message: string, kind: 'info' | 'error' = 'info'): void {
 function setTheme(theme: 'light' | 'dark'): void {
   document.documentElement.dataset.theme = theme;
   ui.theme.checked = theme === 'dark';
+}
+
+// Without a stored choice the OS decides. setTheme always writes data-theme, so a
+// CSS prefers-color-scheme rule would never win once this has run.
+function preferredTheme(): 'light' | 'dark' {
+  const stored = localStorage.getItem(THEME_KEY);
+  if (stored === 'dark' || stored === 'light') return stored;
+  return window.matchMedia(DARK_QUERY).matches ? 'dark' : 'light';
 }
 
 function setSidebar(open: boolean): void {
@@ -974,6 +983,10 @@ function bindEvents(): void {
     localStorage.setItem(THEME_KEY, theme);
     setTheme(theme);
   });
+  window.matchMedia(DARK_QUERY).addEventListener('change', (event) => {
+    if (localStorage.getItem(THEME_KEY)) return;
+    setTheme(event.matches ? 'dark' : 'light');
+  });
   ui.offline.addEventListener('change', () => {
     localStorage.setItem(OFFLINE_PREFERENCE_KEY, String(ui.offline.checked));
     toast('離線資料設定會在重新載入後套用。');
@@ -1030,7 +1043,7 @@ export interface ChatController {
 }
 
 export function initializeChatController(): ChatController {
-  setTheme(localStorage.getItem(THEME_KEY) === 'dark' ? 'dark' : 'light');
+  setTheme(preferredTheme());
   ui.offline.checked = persistentCacheEnabled;
   setRoomControls(false);
   bindEvents();
