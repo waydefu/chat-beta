@@ -14,7 +14,7 @@ This document records the production state after the Chat Lite 3.0 ACL rollout. 
 | Billing account | `017AC8-677C35-503670` |
 | Primary region | `asia-east1` |
 | Production branch | `main` |
-| Deployed commit | `c279de26db238693cc9eff04d6fef2839ccb5220` |
+| Deployed commit | `31abe4a77f8c7c2ffe1409b8c2891852cf2f06fa` |
 | App Check | reCAPTCHA Enterprise key configured; monitor before enforcement |
 | FCM | production VAPID key configured |
 
@@ -74,7 +74,7 @@ The following Node.js 22, second-generation Functions are live in `asia-east1`:
 - Firebase Hosting security headers and CSP are live.
 - Google Auth requires `https://apis.google.com` in `script-src`, and both `https://apis.google.com` and the auth domain `https://f-chat-wayde-fu.firebaseapp.com` in `frame-src`; removing any of them reproduces the login failure.
 - `Cross-Origin-Opener-Policy` is `same-origin-allow-popups` so the `signInWithPopup` window handle survives popup cancellation polling.
-- HTML is served with `Cache-Control: no-cache` so header and CSP changes reach returning browsers on the next request. Before this, HTML inherited the Hosting default `max-age=3600` and a cached document kept enforcing the previous CSP for up to an hour after a headers-only deploy.
+- HTML is served with `Cache-Control: no-cache`, verified live on `/`, `/privacy.html` and `/terms.html`; hashed assets keep `public,max-age=31536000,immutable`. This means header and CSP changes reach returning browsers on the next request. Before this, HTML inherited the Hosting default `max-age=3600` and a cached document kept enforcing the previous CSP for up to an hour after a headers-only deploy.
 - Production source maps are built for diagnostics but excluded from Hosting uploads.
 - Core signed-in JavaScript is `199.80 kB` gzip under the production configuration.
 - Google Sign-In startup was browser-smoked after the CSP fix: no CSP console error, no `auth/internal-error`, and the Auth iframe was created.
@@ -88,6 +88,8 @@ The following Node.js 22, second-generation Functions are live in `asia-east1`:
 - PR #6: allow the Auth domain in CSP `frame-src` and set COOP for popups. This is the change that made Google Sign-In work; #3 and #4 were necessary but not sufficient.
 - PR #8: serve HTML with `no-cache`. Requires a Hosting deploy to take effect.
 - PR #9: upgrade deprecated GitHub Actions runtimes.
+- PR #12: theme the login screen and apply the theme before sign-in.
+- PR #13: scope the provider gate to the phases that deploy providers. `hosting_client` previously required an attestation that could not be answered truthfully while provider secrets remain placeholders, which forced every client-only change out through a manual deploy.
 - The quality-gate workflow passed on production commit `bd58b8f0740ecb69e8cbf9473312564403163747`, including lint, typecheck, unit coverage, Functions tests, Rules tests, E2E, build, and production audit.
 - The manual `Publish GitHub Pages redirect` workflow completed successfully for the previous production commit and the redirect remains live.
 
@@ -102,7 +104,9 @@ GitHub's `production` environment contains the public client configuration, incl
 
 Do not place these values in Markdown even though browser Firebase configuration, App Check site keys, and VAPID public keys are not server secrets.
 
-GitHub Workload Identity Federation is not yet configured, so the production rollout was performed manually from authenticated Google Cloud Shell. The deploy workflow must not be treated as unattended-ready until WIF provider, service account, IAM bindings, and GitHub environment secrets are configured and tested. Step-by-step setup commands are in [WIF-SETUP](WIF-SETUP.md); progress is tracked in issue #7.
+GitHub Workload Identity Federation is configured and proven. The pool `github`, its OIDC provider, and the `github-deploy` service account exist in `f-chat-wayde-fu`; the provider carries an attribute condition restricting it to `waydefu/chat-beta`, and no service account key was created. `GCP_WORKLOAD_IDENTITY_PROVIDER` and `GCP_DEPLOY_SERVICE_ACCOUNT` are set on the `production` environment. The setup commands are recorded in [WIF-SETUP](WIF-SETUP.md).
+
+The first workflow deploy replaced the manual Cloud Shell rollout on 2026-08-12: `hosting_client` phase, run 31600675047, which passed `pnpm check` and `pnpm test:rules` before deploying. The service account holds only `firebasehosting.admin` and `serviceUsageConsumer`; the Rules, RTDB and Functions roles are still to be granted when those phases are first deployed.
 
 ## Provider integrations not yet production-ready
 
@@ -137,7 +141,7 @@ Until those gates pass, Gemini generation, R2 uploads, LiveKit calls, and Algoli
 
 1. Run authenticated smoke tests with all three existing accounts: room discovery, join, send/read/unread, multi-tab presence, typing, offline text queue, and member removal.
 2. Observe Functions errors, Rules denials, App Check metrics, Firestore writes, RTDB mirror drift, and billing for at least 24 hours after rollout.
-3. Configure WIF and validate the phased production workflow without broad service-account keys.
+3. Grant the remaining deploy roles when a phase beyond `hosting_client` is first run. WIF itself is done; the service account is deliberately scoped to hosting only.
 4. Replace and stage-test provider credentials, then deploy only the explicitly listed feature Functions.
 5. Enable App Check enforcement one surface at a time after legitimate traffic is visible in metrics.
 6. Perform the rollback restore drill using a paired Firestore/RTDB backup in an isolated project.
