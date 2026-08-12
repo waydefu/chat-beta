@@ -80,8 +80,9 @@ jobs:
               pnpm exec firebase deploy --project f-chat-wayde-fu --only "$V3_FUNCTIONS"
               ;;
             hosting_client)
+              # No provider gate here. This phase ships only the client bundle; the
+              # provider backends deploy in feature_backend, which checks it there.
               test "$MIGRATION_VERIFIED" = "true"
-              test "${{ inputs.providers_verified }}" = "true"
               test -n "$VITE_FCM_VAPID_KEY"
               test -n "$VITE_APP_CHECK_SITE_KEY"
               pnpm exec firebase deploy --project f-chat-wayde-fu --only hosting

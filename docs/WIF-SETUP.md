@@ -109,10 +109,10 @@ gh secret set GCP_DEPLOY_SERVICE_ACCOUNT --env production --repo waydefu/chat-be
 
 ```bash
 gh workflow run "Deploy Firebase production" --repo waydefu/chat-beta \
-  -f rollout_phase=hosting_client -f migration_verified=true -f providers_verified=true
+  -f rollout_phase=hosting_client -f migration_verified=true -f providers_verified=false
 ```
 
-`migration_verified` 與 `providers_verified` 是人為聲明，不是自動檢查。只有在你確認備份、v3 migration、mirror 驗證與 provider staging 測試都完成時才填 `true`。
+這兩個都是人為聲明，不是自動檢查，照實填。`hosting_client` 只檢查 `migration_verified`，因為這個階段只出 client bundle；provider 就緒與否由 `feature_backend` 把關，那才是實際部署 provider Functions 的地方。
 
 成功的判準：
 
