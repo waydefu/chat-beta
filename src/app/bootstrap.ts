@@ -5,6 +5,7 @@ import {
   type AuthenticatedUser,
 } from '../auth/auth.repository';
 import type { ChatController } from './chat.controller';
+import { applyTheme, preferredTheme, watchSystemTheme } from './theme';
 
 function byId<T extends HTMLElement>(id: string): T {
   const element = document.getElementById(id);
@@ -36,6 +37,8 @@ async function openSignedInApp(user: AuthenticatedUser, expectedGeneration: numb
 }
 
 export function bootstrap(): void {
+  applyTheme(preferredTheme());
+  watchSystemTheme(applyTheme);
   login.addEventListener('click', () => void loginWithGoogle().catch(showError));
   logoutButton.addEventListener('click', () => void logout().catch(showError));
   if (import.meta.env.PROD && 'serviceWorker' in navigator) {
