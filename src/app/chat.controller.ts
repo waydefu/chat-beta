@@ -31,9 +31,8 @@ import type {
 } from '../types';
 import { compareMessages, formatMessageTime, initialOf, truncate } from '../utils';
 import { RoomScope, SessionScope } from './lifecycle';
+import { applyTheme, preferredTheme, storeTheme, watchSystemTheme, type Theme } from './theme';
 
-const THEME_KEY = 'chat-lite:theme';
-const DARK_QUERY = '(prefers-color-scheme: dark)';
 const REACTION_CHOICES = ['👍', '❤️', '😂'];
 
 function byId<T extends HTMLElement>(id: string): T {
@@ -148,17 +147,9 @@ function toast(message: string, kind: 'info' | 'error' = 'info'): void {
   window.setTimeout(() => element.remove(), 4500);
 }
 
-function setTheme(theme: 'light' | 'dark'): void {
-  document.documentElement.dataset.theme = theme;
+function setTheme(theme: Theme): void {
+  applyTheme(theme);
   ui.theme.checked = theme === 'dark';
-}
-
-// Without a stored choice the OS decides. setTheme always writes data-theme, so a
-// CSS prefers-color-scheme rule would never win once this has run.
-function preferredTheme(): 'light' | 'dark' {
-  const stored = localStorage.getItem(THEME_KEY);
-  if (stored === 'dark' || stored === 'light') return stored;
-  return window.matchMedia(DARK_QUERY).matches ? 'dark' : 'light';
 }
 
 function setSidebar(open: boolean): void {
@@ -980,13 +971,10 @@ function bindEvents(): void {
   ui.closeMembers.addEventListener('click', () => setPresence(false));
   ui.theme.addEventListener('change', () => {
     const theme = ui.theme.checked ? 'dark' : 'light';
-    localStorage.setItem(THEME_KEY, theme);
+    storeTheme(theme);
     setTheme(theme);
   });
-  window.matchMedia(DARK_QUERY).addEventListener('change', (event) => {
-    if (localStorage.getItem(THEME_KEY)) return;
-    setTheme(event.matches ? 'dark' : 'light');
-  });
+  watchSystemTheme(setTheme);
   ui.offline.addEventListener('change', () => {
     localStorage.setItem(OFFLINE_PREFERENCE_KEY, String(ui.offline.checked));
     toast('離線資料設定會在重新載入後套用。');

@@ -102,6 +102,19 @@ button:active:not(:disabled){transform:scale(.97)}
 .auth-btn:hover{box-shadow:0 16px 36px #07142f4a;transform:translateY(-1px)}
 .auth-btn span{box-shadow:0 2px 8px #0002;font-family:Arial,sans-serif;font-weight:800}
 .legal-copy{margin-top:22px;line-height:1.7}
+:root[data-theme=dark] .auth-card{
+  border-color:#ffffff1f;
+  background:linear-gradient(155deg,#131f36f2,#0d1728ee);
+  box-shadow:0 34px 100px #00040dcc,0 1px 0 #ffffff14 inset;
+  color:#eef3ff;
+}
+:root[data-theme=dark] .brand-mark{border-color:#2c3b57;box-shadow:0 16px 38px #00050f4d,0 0 0 8px #ffffff0f}
+:root[data-theme=dark] .eyebrow{background:#1c2b4d;color:#9db8ff}
+:root[data-theme=dark] .auth-copy{color:#a9b6cf}
+:root[data-theme=dark] .legal-copy{color:#8f9cb8}
+:root[data-theme=dark] .legal-copy a{color:#8fb0ff}
+:root[data-theme=dark] .auth-btn{background:linear-gradient(135deg,#2747b8,#3a63dd);box-shadow:0 13px 30px #0a1836}
+:root[data-theme=dark] .auth-btn:hover{box-shadow:0 16px 36px #0a1836b3}
 
 .app-shell{grid-template-columns:300px minmax(0,1fr) 280px;background:var(--surface-2)}
 .sidebar,.presence-panel{background:color-mix(in srgb,var(--surface) 96%,transparent);backdrop-filter:blur(16px)}
