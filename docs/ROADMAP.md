@@ -1,5 +1,7 @@
 # Roadmap and delivery status
 
+Production rollout status and the next operator checklist are recorded in [HANDOFF](HANDOFF.md). The repository-delivery table below remains the feature map; HANDOFF is authoritative for what is actually live.
+
 | Phase | Repository delivery | External/staging gate |
 | --- | --- | --- |
 | 0–1 | audit findings、schema、runbooks、ADRs、local/online preflight | production exports、billing/data-volume inventory |

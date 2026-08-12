@@ -1,0 +1,177 @@
+# Production handoff
+
+Last updated: 2026-08-12 (Asia/Taipei)
+
+This document records the production state after the Chat Lite 3.0 ACL rollout. It is the starting point for the next operator. Never copy secret values, user IDs, migration artifacts, or production data into Git.
+
+## Current production state
+
+| Item | Value |
+| --- | --- |
+| Firebase project | `f-chat-wayde-fu` |
+| Firebase Hosting | <https://f-chat-wayde-fu.web.app/> |
+| Legacy GitHub Pages | <https://waydefu.github.io/chat-beta/> (redirects to Firebase Hosting) |
+| Billing account | `017AC8-677C35-503670` |
+| Primary region | `asia-east1` |
+| Production branch | `main` |
+| Deployed commit | `bd58b8f0740ecb69e8cbf9473312564403163747` |
+| App Check | reCAPTCHA Enterprise key configured; monitor before enforcement |
+| FCM | production VAPID key configured |
+
+The production client, migrated data, restrictive Firestore/RTDB Rules, membership mirror workers, and GitHub Pages redirect are live. Core text chat and room membership ACL are the supported production scope at this handoff.
+
+## Rollout record
+
+### Backup
+
+The paired backup was taken before migration at `20260812T094822Z`:
+
+- Firestore managed export: `gs://f-chat-wayde-fu-chat-lite-backups/chat-lite/20260812T094822Z/firestore`
+- RTDB export: `gs://f-chat-wayde-fu-chat-lite-backups/chat-lite/20260812T094822Z/rtdb.json`
+- Backup bucket: `gs://f-chat-wayde-fu-chat-lite-backups`
+- Bucket region: `asia-east1`
+- Uniform bucket-level access and object versioning are enabled.
+- Retention is 30 days. Confirm the exact expiry before relying on this backup for a later rollback.
+
+Migration reports were written under the ignored `artifacts/` directory in Cloud Shell and were not committed.
+
+### Data migration
+
+The v3 migration completed successfully:
+
+- Rooms scanned: 1
+- Rooms migrated: 1
+- Rooms quarantined: 0
+- Memberships created: 3
+- Legacy messages upgraded in place: 5
+- Orphan messages: 0
+- Non-member senders: 0
+- The room without an owner was assigned to its earliest message sender before the apply run.
+- The room is now `schemaVersion: 3` with `migrationStatus: complete`.
+- All memberships are `active`; roles are one owner and two members.
+- Matching `users/{uid}/roomStates/{roomId}` documents exist.
+- RTDB membership mirrors were reconciled and verified after migration.
+
+Do not commit the production room name, user IDs, message contents, or raw migration reports.
+
+### Deployed membership backend
+
+The following Node.js 22, second-generation Functions are live in `asia-east1`:
+
+- `createDirectRoom`
+- `createOrJoinPublicRoom`
+- `revokeRoomMember`
+- `syncMembershipMirror`
+- `reconcileMembershipMirrors`
+
+`syncMembershipMirror` is retryable and idempotent. `reconcileMembershipMirrors` runs every 15 minutes. Firestore membership is canonical; the RTDB mirror remains an eventually consistent derivative. Revocation stays fail-closed through the `revoking` state and operation journal.
+
+### Rules and Hosting
+
+- Restrictive Firestore Rules are live.
+- Restrictive RTDB Rules are live.
+- Anonymous production reads of room content were verified denied (Firestore `403`, RTDB `401`).
+- Firebase Hosting security headers and CSP are live.
+- Google Auth requires `https://apis.google.com` in both `script-src` and `frame-src`; removing either reproduces the login failure.
+- Production source maps are built for diagnostics but excluded from Hosting uploads.
+- Core signed-in JavaScript is `199.80 kB` gzip under the production configuration.
+- Google Sign-In startup was browser-smoked after the CSP fix: no CSP console error, no `auth/internal-error`, and the Auth iframe was created.
+
+### GitHub delivery record
+
+- PR #1: Chat Lite 3.0 implementation and rollout infrastructure.
+- PR #2: exclude source maps from Firebase Hosting uploads.
+- PR #3: allow the Google Auth API script in CSP.
+- PR #4: allow the Google Auth iframe in CSP.
+- The quality-gate workflow passed on production commit `bd58b8f0740ecb69e8cbf9473312564403163747`, including lint, typecheck, unit coverage, Functions tests, Rules tests, E2E, build, and production audit.
+- The manual `Publish GitHub Pages redirect` workflow completed successfully for the previous production commit and the redirect remains live.
+
+## Configuration state
+
+GitHub's `production` environment contains the public client configuration, including:
+
+- Firebase API/auth/project/app/database/messaging configuration
+- `VITE_FIREBASE_FUNCTIONS_REGION`
+- `VITE_APP_CHECK_SITE_KEY`
+- `VITE_FCM_VAPID_KEY`
+
+Do not place these values in Markdown even though browser Firebase configuration, App Check site keys, and VAPID public keys are not server secrets.
+
+GitHub Workload Identity Federation is not yet configured, so the production rollout was performed manually from authenticated Google Cloud Shell. The deploy workflow must not be treated as unattended-ready until WIF provider, service account, IAM bindings, and GitHub environment secrets are configured and tested.
+
+## Provider integrations not yet production-ready
+
+The repository contains implementation boundaries for Gemini, R2, LiveKit, and Algolia, but their feature backends were intentionally not deployed with placeholder credentials.
+
+Secret Manager currently contains `UNCONFIGURED` placeholder versions created only to pass additive deployment prompts. They are not valid credentials. Do not deploy provider Functions until each value is replaced and verified in protected staging:
+
+- `GEMINI_API_KEY`
+- `R2_ACCOUNT_ID`
+- `R2_ACCESS_KEY_ID`
+- `R2_SECRET_ACCESS_KEY`
+- `R2_BUCKET`
+- `LIVEKIT_URL`
+- `LIVEKIT_API_KEY`
+- `LIVEKIT_API_SECRET`
+- `ALGOLIA_APP_ID`
+- `ALGOLIA_ADMIN_KEY`
+- `ALGOLIA_INDEX_NAME`
+
+Required provider gates:
+
+1. Replace placeholder secret versions without exposing values in logs or Git.
+2. Configure R2 CORS, lifecycle rules, quotas, and orphan cleanup.
+3. Configure LiveKit Cloud project, grants, and short token TTL.
+4. Configure a room-bound Algolia index and verify delete synchronization.
+5. Pin a stable Gemini model through Remote Config and verify usage/rate limits.
+6. Run protected staging smoke tests before deploying `feature_backend`.
+
+Until those gates pass, Gemini generation, R2 uploads, LiveKit calls, and Algolia historical search must not be represented as production-ready.
+
+## Immediate follow-up
+
+1. Run authenticated smoke tests with all three existing accounts: room discovery, join, send/read/unread, multi-tab presence, typing, offline text queue, and member removal.
+2. Observe Functions errors, Rules denials, App Check metrics, Firestore writes, RTDB mirror drift, and billing for at least 24 hours after rollout.
+3. Configure WIF and validate the phased production workflow without broad service-account keys.
+4. Replace and stage-test provider credentials, then deploy only the explicitly listed feature Functions.
+5. Enable App Check enforcement one surface at a time after legitimate traffic is visible in metrics.
+6. Perform the rollback restore drill using a paired Firestore/RTDB backup in an isolated project.
+7. Remove legacy fields, legacy RTDB paths, compatibility branches, and explicitly inventoried legacy Functions only after the seven-day observation gate. For this rollout, the earliest planned cleanup date is 2026-08-19, and only if monitoring is clean.
+8. Update privacy/terms before enabling Gemini, R2, LiveKit, or Algolia for users.
+
+## Operational checks
+
+Repository quality gates:
+
+```bash
+pnpm lint
+pnpm typecheck
+pnpm test:unit --coverage
+pnpm test:functions
+pnpm test:rules
+pnpm test:e2e
+pnpm build
+pnpm audit --prod --audit-level high
+```
+
+Read-only production inventory from an authenticated environment:
+
+```bash
+pnpm preflight:rollout:online
+firebase functions:list --project f-chat-wayde-fu
+firebase hosting:sites:list --project f-chat-wayde-fu
+```
+
+Before any production mutation, confirm all of the following:
+
+- `git status --short` is clean.
+- `git rev-parse HEAD` matches the intended merged `main` commit.
+- The command explicitly names `--project f-chat-wayde-fu`.
+- The required public Vite variables are present in the build environment.
+- A current paired backup and rollback point exist.
+- Provider deployment gates are satisfied for every Function being deployed.
+
+## Known maintenance warnings
+
+GitHub Actions currently reports deprecation warnings for Node.js 20-based action runtimes and `actions/setup-java@v4`. These did not fail the quality gates, but the workflow should be upgraded to supported action versions before they become errors.
+
