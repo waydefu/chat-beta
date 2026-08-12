@@ -6,6 +6,24 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    function memberPath(roomId, uid) {
+      return /databases/$(database)/documents/rooms/$(roomId)/members/$(uid);
+    }
+
+    function isActiveMember(roomId) {
+      return signedIn()
+        && exists(memberPath(roomId, request.auth.uid))
+        && get(memberPath(roomId, request.auth.uid)).data.status == 'active';
+    }
+
+    function roleFor(roomId) {
+      return get(memberPath(roomId, request.auth.uid)).data.role;
+    }
+
+    function canManageRoom(roomId) {
+      return isActiveMember(roomId) && roleFor(roomId) in ['owner', 'admin'];
+    }
+
     function validText(value, maximum) {
       return value is string && value.size() > 0 && value.size() <= maximum;
     }
@@ -14,53 +32,68 @@ service cloud.firestore {
       return !data.keys().hasAny([key]) || (data[key] is string && data[key].size() <= maximum);
     }
 
-    function validMessageCreate(data) {
-      return data.keys().hasAll(['uid', 'user', 'text', 'timestamp'])
-        && data.keys().hasOnly(['uid', 'user', 'text', 'timestamp', 'readBy', 'clientCreatedAt', 'replyToId'])
-        && data.uid == request.auth.uid
-        && validText(data.user, 100)
-        && validText(data.text, 1000)
-        && data.timestamp == request.time
-        && optionalString(data, 'replyToId', 150)
-        && (!data.keys().hasAny(['clientCreatedAt']) || data.clientCreatedAt is number)
-        && (!data.keys().hasAny(['readBy']) || (
-          data.readBy is list
-          && data.readBy.size() == 1
-          && data.readBy[0] == request.auth.uid
-        ));
+    function validMention(mention, text) {
+      return mention is map
+        && mention.keys().hasAll(['type', 'id', 'label', 'start', 'end'])
+        && mention.keys().hasOnly(['type', 'id', 'label', 'start', 'end'])
+        && mention.type in ['user', 'bot']
+        && validText(mention.id, 150)
+        && validText(mention.label, 100)
+        && mention.start is int
+        && mention.end is int
+        && mention.start >= 0
+        && mention.end > mention.start
+        && mention.end <= text.size();
     }
 
-    function validLegacyReadReceipt() {
-      return resource.data.keys().hasAny(['readBy'])
-        && resource.data.readBy is list
-        && request.resource.data.readBy is list
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['readBy'])
-        && request.resource.data.readBy.size() <= resource.data.readBy.size() + 1
-        && request.resource.data.readBy.hasAll(resource.data.readBy)
-        && request.resource.data.readBy.hasAny([request.auth.uid]);
+    function validMentionAt(mentions, text, index) {
+      return mentions.size() <= index || validMention(mentions[index], text);
     }
 
-    function validLastMessage(data) {
-      return !data.keys().hasAny(['lastMessage']) || (
-        data.lastMessage is map
-        && data.lastMessage.keys().hasAll(['id', 'uid', 'user', 'text', 'timestamp'])
-        && data.lastMessage.keys().hasOnly(['id', 'uid', 'user', 'text', 'timestamp'])
-        && validText(data.lastMessage.id, 150)
-        && data.lastMessage.uid == request.auth.uid
-        && validText(data.lastMessage.user, 100)
-        && validText(data.lastMessage.text, 120)
-        && data.lastMessage.timestamp == request.time
+    function validMentions(data) {
+      return !data.keys().hasAny(['mentions']) || (
+        data.mentions is list
+        && data.mentions.size() <= 5
+        && validMentionAt(data.mentions, data.text, 0)
+        && validMentionAt(data.mentions, data.text, 1)
+        && validMentionAt(data.mentions, data.text, 2)
+        && validMentionAt(data.mentions, data.text, 3)
+        && validMentionAt(data.mentions, data.text, 4)
       );
     }
 
-    // Photos are rendered into <img src> for every room member, so an arbitrary URL
-    // would let anyone harvest the IP of everyone who views the room. Google sign-in
-    // is the only provider, so pin the host to Google's avatar CDN.
-    function validPhotoURL(data) {
-      return !data.keys().hasAny(['photoURL']) || (
-        data.photoURL is string
-        && data.photoURL.size() <= 500
-        && data.photoURL.matches('https://[a-z0-9-]+[.]googleusercontent[.]com/.*')
+    function validUserTextMessage(roomId, data) {
+      return data.keys().hasAll([
+          'roomId', 'senderId', 'senderType', 'senderDisplayName', 'kind', 'text', 'createdAt'
+        ])
+        && data.keys().hasOnly([
+          'roomId', 'senderId', 'senderType', 'senderDisplayName', 'kind', 'text',
+          'createdAt', 'clientCreatedAt', 'replyToId', 'mentions', 'editedAt', 'deletedAt'
+        ])
+        && data.roomId == roomId
+        && data.senderId == request.auth.uid
+        && data.senderType == 'user'
+        && data.kind == 'text'
+        && validText(data.senderDisplayName, 100)
+        && validText(data.text, 4000)
+        && data.createdAt == request.time
+        && optionalString(data, 'replyToId', 150)
+        && (!data.keys().hasAny(['clientCreatedAt']) || data.clientCreatedAt is number)
+        && validMentions(data);
+    }
+
+    function validLastMessage(roomId, data) {
+      return !data.keys().hasAny(['lastMessage']) || (
+        data.lastMessage is map
+        && data.lastMessage.keys().hasAll(['id', 'senderId', 'senderDisplayName', 'kind', 'preview', 'createdAt'])
+        && data.lastMessage.keys().hasOnly(['id', 'senderId', 'senderDisplayName', 'kind', 'preview', 'createdAt'])
+        && validText(data.lastMessage.id, 150)
+        && data.lastMessage.senderId == request.auth.uid
+        && validText(data.lastMessage.senderDisplayName, 100)
+        && data.lastMessage.kind == 'text'
+        && data.lastMessage.preview is string
+        && data.lastMessage.preview.size() <= 160
+        && data.lastMessage.createdAt == request.time
       );
     }
 
@@ -72,49 +105,98 @@ service cloud.firestore {
         && validText(data.lastReadMessageId, 150);
     }
 
+    function validPhotoURL(data) {
+      return !data.keys().hasAny(['photoURL']) || (
+        data.photoURL is string
+        && data.photoURL.size() <= 500
+        && data.photoURL.matches('https://[a-z0-9-]+[.]googleusercontent[.]com/.*')
+      );
+    }
+
     match /rooms/{roomId} {
-      allow read: if signedIn();
-      allow create: if signedIn()
-        && request.resource.data.keys().hasAll(['createdAt'])
-        && request.resource.data.keys().hasOnly(['createdAt', 'createdBy', 'updatedAt', 'lastMessage'])
-        && request.resource.data.createdAt == request.time
-        && (!request.resource.data.keys().hasAny(['createdBy']) || request.resource.data.createdBy == request.auth.uid)
-        && (!request.resource.data.keys().hasAny(['updatedAt']) || request.resource.data.updatedAt == request.time)
-        && validLastMessage(request.resource.data);
-      allow update: if signedIn()
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['createdAt', 'updatedAt', 'lastMessage'])
-        && (!request.resource.data.keys().hasAny(['updatedAt']) || request.resource.data.updatedAt == request.time)
-        && (!request.resource.data.keys().hasAny(['createdAt']) || request.resource.data.createdAt == request.time || request.resource.data.createdAt == resource.data.createdAt)
-        && validLastMessage(request.resource.data);
-      allow delete: if false;
+      allow get, list: if signedIn() && (
+        resource.data.visibility == 'public' || isActiveMember(roomId)
+      );
+      allow create, delete: if false;
+      allow update: if isActiveMember(roomId)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['updatedAt', 'lastMessage'])
+        && request.resource.data.updatedAt == request.time
+        && validLastMessage(roomId, request.resource.data);
+
+      match /members/{userId} {
+        allow read: if isActiveMember(roomId);
+        allow write: if false;
+      }
 
       match /messages/{messageId} {
-        allow read: if signedIn();
-        allow create: if signedIn() && validMessageCreate(request.resource.data);
-        allow update: if signedIn() && (
-          (
-            resource.data.uid == request.auth.uid
-            && request.resource.data.uid == resource.data.uid
-            && request.resource.data.user == resource.data.user
-            && request.resource.data.timestamp == resource.data.timestamp
-            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['text', 'editedAt'])
-            && request.resource.data.text != resource.data.text
-            && validText(request.resource.data.text, 1000)
-            && request.resource.data.editedAt == request.time
-          ) || validLegacyReadReceipt()
-        );
-        allow delete: if signedIn() && resource.data.uid == request.auth.uid;
+        allow read: if isActiveMember(roomId);
+        allow create: if isActiveMember(roomId) && validUserTextMessage(roomId, request.resource.data);
+        allow update: if isActiveMember(roomId)
+          && resource.data.senderType == 'user'
+          && resource.data.senderId == request.auth.uid
+          && !resource.data.keys().hasAny(['deletedAt'])
+          && request.resource.data.roomId == resource.data.roomId
+          && request.resource.data.senderId == resource.data.senderId
+          && request.resource.data.senderType == resource.data.senderType
+          && request.resource.data.senderDisplayName == resource.data.senderDisplayName
+          && request.resource.data.kind == resource.data.kind
+          && request.resource.data.createdAt == resource.data.createdAt
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['text', 'mentions', 'editedAt', 'deletedAt'])
+          && validText(request.resource.data.text, 4000)
+          && validMentions(request.resource.data)
+          && (
+            (request.resource.data.diff(resource.data).affectedKeys().hasAny(['editedAt'])
+              && request.resource.data.editedAt == request.time)
+            || (request.resource.data.diff(resource.data).affectedKeys().hasAny(['deletedAt'])
+              && request.resource.data.deletedAt == request.time)
+          );
+        allow delete: if false;
       }
 
       match /readStates/{userId} {
-        allow read: if signedIn();
-        allow create, update: if signedIn() && request.auth.uid == userId && validReadState(request.resource.data);
-        allow delete: if signedIn() && request.auth.uid == userId;
+        allow read: if isActiveMember(roomId);
+        allow create, update: if isActiveMember(roomId)
+          && request.auth.uid == userId
+          && validReadState(request.resource.data);
+        allow delete: if isActiveMember(roomId) && request.auth.uid == userId;
+      }
+
+      match /reactions/{reactionId} {
+        allow read: if isActiveMember(roomId);
+        allow create, update: if isActiveMember(roomId)
+          && request.resource.data.keys().hasAll(['messageId', 'userId', 'emoji', 'updatedAt'])
+          && request.resource.data.keys().hasOnly(['messageId', 'userId', 'emoji', 'updatedAt'])
+          && reactionId == request.resource.data.messageId + '_' + request.auth.uid
+          && request.resource.data.userId == request.auth.uid
+          && validText(request.resource.data.messageId, 150)
+          && validText(request.resource.data.emoji, 16)
+          && request.resource.data.updatedAt == request.time;
+        allow delete: if isActiveMember(roomId) && resource.data.userId == request.auth.uid;
+      }
+
+      match /attachments/{attachmentId} {
+        allow read: if isActiveMember(roomId);
+        allow write: if false;
+      }
+
+      match /aiRequests/{requestId} {
+        allow read: if isActiveMember(roomId);
+        allow write: if false;
+      }
+
+      match /calls/{callId} {
+        allow read: if isActiveMember(roomId);
+        allow write: if false;
+      }
+
+      match /bots/{botId} {
+        allow read: if isActiveMember(roomId);
+        allow write: if canManageRoom(roomId) && false;
       }
     }
 
     match /users/{userId} {
-      allow read: if signedIn();
+      allow read: if signedIn() && request.auth.uid == userId;
       allow create: if signedIn() && request.auth.uid == userId
         && request.resource.data.keys().hasOnly(['displayName', 'photoURL'])
         && validText(request.resource.data.displayName, 100)
@@ -125,8 +207,6 @@ service cloud.firestore {
         && validPhotoURL(request.resource.data);
       allow delete: if false;
 
-      // Push tokens address a specific browser, so only the owner may read or write
-      // them. The sender runs with the Admin SDK and bypasses these rules.
       match /pushTokens/{tokenId} {
         allow read: if signedIn() && request.auth.uid == userId;
         allow create, update: if signedIn() && request.auth.uid == userId
@@ -139,9 +219,46 @@ service cloud.firestore {
 
       match /roomStates/{roomId} {
         allow read: if signedIn() && request.auth.uid == userId;
-        allow create, update: if signedIn() && request.auth.uid == userId && validReadState(request.resource.data);
-        allow delete: if signedIn() && request.auth.uid == userId;
+        allow create, delete: if false;
+        allow update: if signedIn()
+          && request.auth.uid == userId
+          && resource.data.membershipStatus == 'active'
+          && request.resource.data.membershipStatus == resource.data.membershipStatus
+          && request.resource.data.role == resource.data.role
+          && request.resource.data.roomName == resource.data.roomName
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'lastReadAt', 'lastReadMessageId', 'updatedAt'
+          ])
+          && request.resource.data.lastReadAt == request.time
+          && request.resource.data.updatedAt == request.time
+          && validText(request.resource.data.lastReadMessageId, 150);
       }
+
+      match /stickerPacks/{packId} {
+        allow read: if signedIn() && request.auth.uid == userId;
+        allow write: if false;
+      }
+    }
+
+    match /bots/{botId} {
+      allow read: if signedIn();
+      allow write: if false;
+    }
+
+    match /directRoomKeys/{key} {
+      allow read, write: if false;
+    }
+
+    match /membershipOperations/{operationId} {
+      allow read, write: if false;
+    }
+
+    match /rateLimits/{limitId} {
+      allow read, write: if false;
+    }
+
+    match /aiConcurrency/{limitId} {
+      allow read, write: if false;
     }
   }
 }

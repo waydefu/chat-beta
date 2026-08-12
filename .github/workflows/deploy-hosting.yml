@@ -1,0 +1,101 @@
+name: Deploy Firebase production
+
+on:
+  workflow_dispatch:
+    inputs:
+      rollout_phase:
+        description: Migration-safe deployment phase
+        required: true
+        type: choice
+        default: additive_backend
+        options:
+          - additive_backend
+          - feature_backend
+          - hosting_client
+          - restrictive_rules
+          - full_post_migration
+      migration_verified:
+        description: Confirm backups, v3 migration and mirror validation are complete
+        required: true
+        type: boolean
+        default: false
+      providers_verified:
+        description: Confirm provider secrets/configuration and staging smoke tests are complete
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  deploy:
+    environment: production
+    runs-on: ubuntu-latest
+    env:
+      VITE_FIREBASE_API_KEY: ${{ vars.VITE_FIREBASE_API_KEY }}
+      VITE_FIREBASE_AUTH_DOMAIN: ${{ vars.VITE_FIREBASE_AUTH_DOMAIN }}
+      VITE_FIREBASE_PROJECT_ID: ${{ vars.VITE_FIREBASE_PROJECT_ID }}
+      VITE_FIREBASE_APP_ID: ${{ vars.VITE_FIREBASE_APP_ID }}
+      VITE_FIREBASE_DATABASE_URL: ${{ vars.VITE_FIREBASE_DATABASE_URL }}
+      VITE_FIREBASE_MESSAGING_SENDER_ID: ${{ vars.VITE_FIREBASE_MESSAGING_SENDER_ID }}
+      VITE_FIREBASE_REGION: ${{ vars.VITE_FIREBASE_REGION }}
+      VITE_FCM_VAPID_KEY: ${{ vars.VITE_FCM_VAPID_KEY }}
+      VITE_APP_CHECK_SITE_KEY: ${{ vars.VITE_APP_CHECK_SITE_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.9.0
+          run_install: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_DEPLOY_SERVICE_ACCOUNT }}
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm check
+      - run: pnpm test:rules
+      - name: Deploy selected rollout phase
+        env:
+          ROLLOUT_PHASE: ${{ inputs.rollout_phase }}
+          MIGRATION_VERIFIED: ${{ inputs.migration_verified }}
+        run: |
+          MEMBERSHIP_FUNCTIONS="functions:createDirectRoom,functions:createOrJoinPublicRoom,functions:revokeRoomMember,functions:syncMembershipMirror,functions:reconcileMembershipMirrors"
+          V3_FUNCTIONS="$MEMBERSHIP_FUNCTIONS,functions:generateGeminiReply,functions:cleanupExpiredAIDrafts,functions:cleanupExpiredUploads,functions:cleanupOrphanR2Objects,functions:finalizeUpload,functions:getAttachmentDownloadUrl,functions:requestUpload,functions:endLiveKitCall,functions:getLiveKitToken,functions:startLiveKitCall,functions:notifyOnMessage,functions:searchMessages,functions:syncMessageSearchIndex,functions:cleanupExpiredCustomStickerUploads,functions:deleteCustomSticker,functions:finalizeCustomStickerUpload,functions:getCustomStickerDownloadUrl,functions:requestCustomStickerUpload,functions:sendStickerMessage"
+          case "$ROLLOUT_PHASE" in
+            additive_backend)
+              pnpm exec firebase deploy --project f-chat-wayde-fu --only "firestore:indexes,$MEMBERSHIP_FUNCTIONS"
+              ;;
+            feature_backend)
+              test "$MIGRATION_VERIFIED" = "true"
+              test "${{ inputs.providers_verified }}" = "true"
+              pnpm exec firebase deploy --project f-chat-wayde-fu --only "$V3_FUNCTIONS"
+              ;;
+            hosting_client)
+              test "$MIGRATION_VERIFIED" = "true"
+              test "${{ inputs.providers_verified }}" = "true"
+              test -n "$VITE_FCM_VAPID_KEY"
+              test -n "$VITE_APP_CHECK_SITE_KEY"
+              pnpm exec firebase deploy --project f-chat-wayde-fu --only hosting
+              ;;
+            restrictive_rules)
+              test "$MIGRATION_VERIFIED" = "true"
+              pnpm exec firebase deploy --project f-chat-wayde-fu --only firestore:rules,database
+              ;;
+            full_post_migration)
+              test "$MIGRATION_VERIFIED" = "true"
+              test "${{ inputs.providers_verified }}" = "true"
+              test -n "$VITE_FCM_VAPID_KEY"
+              test -n "$VITE_APP_CHECK_SITE_KEY"
+              pnpm exec firebase deploy --project f-chat-wayde-fu --only "firestore:rules,firestore:indexes,database,hosting,$V3_FUNCTIONS"
+              ;;
+          esac

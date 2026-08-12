@@ -29,8 +29,8 @@ describe('message behavior', () => {
 
   it('keeps deterministic chronological ordering', () => {
     const messages: ChatMessage[] = [
-      { id: 'b', uid: 'u', user: 'U', text: '2', clientCreatedAt: 20 },
-      { id: 'a', uid: 'u', user: 'U', text: '1', clientCreatedAt: 10 },
+      { id: 'b', roomId: 'r', senderId: 'u', senderType: 'user', senderDisplayName: 'U', kind: 'text', text: '2', clientCreatedAt: 20 },
+      { id: 'a', roomId: 'r', senderId: 'u', senderType: 'user', senderDisplayName: 'U', kind: 'text', text: '1', clientCreatedAt: 10 },
     ];
     expect(messages.sort(compareMessages).map((message) => message.id)).toEqual(['a', 'b']);
   });

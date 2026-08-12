@@ -1,0 +1,7 @@
+# Phase 0 audit
+
+Repository observation before 3.0 work: `src/main.ts` was about 1,270 lines and mixed Firebase listeners, mutations, UI, lifecycle, presence, typing and push. Firestore Rules let every authenticated user read all rooms/messages/readStates/users; RTDB exposed global legacy and V2 presence/typing; push used readStates as recipient membership. Message records were text-only, Functions were a standalone JavaScript folder outside workspace/tests, Pages was the production deploy path, and the Firebase production chunk baseline was about 786kB (233kB gzip).
+
+The repository baseline passed ESLint, TypeScript, five unit tests and production build. The most recent GitHub workflow had twelve Rules tests passing; no E2E, accessibility, migration dry-run or Functions tests existed.
+
+3.0 changes make Rules and data model intentionally incompatible with an unmigrated production database. The following production facts cannot be inferred from source and must be recorded by the operator before rollout: current Firestore/RTDB export locations, resource regions, Functions runtime inventory, existing composite indexes, App Check registration/enforcement metrics, FCM VAPID configuration, billing plan/budgets/alerts, exact room/member/message/object counts, R2 bucket/CORS/lifecycle, LiveKit project, Algolia index and Firebase Hosting canonical domain. Do not deploy restrictive Rules until those fields and the MIGRATION checklist are completed.

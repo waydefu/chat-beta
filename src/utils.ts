@@ -36,7 +36,7 @@ export function encodeRoomKey(roomId: string): string {
 }
 
 export function messageMillis(message: ChatMessage): number {
-  return message.timestamp?.toMillis?.() ?? message.clientCreatedAt ?? 0;
+  return message.createdAt?.toMillis() ?? message.clientCreatedAt ?? 0;
 }
 
 export function compareMessages(a: ChatMessage, b: ChatMessage): number {
