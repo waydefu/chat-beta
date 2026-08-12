@@ -7,10 +7,12 @@ import {
   type RulesTestContext,
   type RulesTestEnvironment,
 } from '@firebase/rules-unit-testing';
-import { doc, getDoc, serverTimestamp, setDoc, updateDoc, type Firestore } from 'firebase/firestore';
+import { deleteDoc, doc, getDoc, serverTimestamp, setDoc, updateDoc, type Firestore } from 'firebase/firestore';
 import { get, ref, set, type Database } from 'firebase/database';
 import { afterAll, beforeAll, beforeEach, describe, it } from 'vitest';
 
+const ROOM_ID = 'general';
+const ROOM_KEY = 'Z2VuZXJhbA';
 let environment: RulesTestEnvironment;
 
 function testFirestore(context: RulesTestContext): Firestore {
@@ -19,6 +21,51 @@ function testFirestore(context: RulesTestContext): Firestore {
 
 function testDatabase(context: RulesTestContext): Database {
   return context.database() as unknown as Database;
+}
+
+async function seedFirestore(status: 'active' | 'revoking' = 'active'): Promise<void> {
+  await environment.withSecurityRulesDisabled(async (context) => {
+    const database = testFirestore(context);
+    await setDoc(doc(database, 'rooms', ROOM_ID), {
+      schemaVersion: 3,
+      name: 'General',
+      type: 'group',
+      visibility: 'public',
+      ownerId: 'owner',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+    for (const [uid, role, memberStatus] of [
+      ['owner', 'owner', 'active'],
+      ['alice', 'member', status],
+    ] as const) {
+      await setDoc(doc(database, 'rooms', ROOM_ID, 'members', uid), {
+        userId: uid,
+        role,
+        status: memberStatus,
+        displayName: uid,
+        version: 1,
+      });
+    }
+    await setDoc(doc(database, 'rooms', ROOM_ID, 'messages', 'm1'), {
+      roomId: ROOM_ID,
+      senderId: 'alice',
+      senderType: 'user',
+      senderDisplayName: 'Alice',
+      kind: 'text',
+      text: 'Original',
+      mentions: [],
+      createdAt: new Date(),
+    });
+  });
+}
+
+async function seedMirror(uid = 'alice', roomKey = ROOM_KEY): Promise<void> {
+  await environment.withSecurityRulesDisabled(async (context) => {
+    await set(ref(testDatabase(context), `realtime/rooms/${roomKey}/members/${uid}`), {
+      status: 'active', role: 'member', displayName: uid, version: 1,
+    });
+  });
 }
 
 beforeAll(async () => {
@@ -36,102 +83,155 @@ beforeEach(async () => {
 
 afterAll(async () => environment.cleanup());
 
-describe('Firestore rules', () => {
-  it('requires authentication to read rooms', async () => {
-    const anonymous = testFirestore(environment.unauthenticatedContext());
-    await assertFails(getDoc(doc(anonymous, 'rooms', 'general')));
+describe('Firestore room ACL', () => {
+  it('denies anonymous room metadata and allows signed-in public metadata', async () => {
+    await seedFirestore();
+    await assertFails(getDoc(doc(testFirestore(environment.unauthenticatedContext()), 'rooms', ROOM_ID)));
+    await assertSucceeds(getDoc(doc(testFirestore(environment.authenticatedContext('bob')), 'rooms', ROOM_ID)));
   });
 
-  it('allows an authenticated user to create a room and authored message', async () => {
-    const database = testFirestore(environment.authenticatedContext('alice'));
-    await assertSucceeds(setDoc(doc(database, 'rooms', 'general'), {
-      createdAt: serverTimestamp(), createdBy: 'alice', updatedAt: serverTimestamp(),
-    }));
-    await assertSucceeds(setDoc(doc(database, 'rooms', 'general', 'messages', 'm1'), {
-      uid: 'alice', user: 'Alice', text: 'Hello', timestamp: serverTimestamp(), clientCreatedAt: Date.now(),
-    }));
-  });
-
-  it('allows only the author to edit a message', async () => {
+  it('denies messages to non-members and revoking members', async () => {
+    await seedFirestore();
+    await assertFails(getDoc(doc(testFirestore(environment.authenticatedContext('bob')), 'rooms', ROOM_ID, 'messages', 'm1')));
     await environment.withSecurityRulesDisabled(async (context) => {
-      await setDoc(doc(testFirestore(context), 'rooms', 'general', 'messages', 'm1'), {
-        uid: 'alice', user: 'Alice', text: 'Original', timestamp: new Date(),
-      });
+      await updateDoc(doc(testFirestore(context), 'rooms', ROOM_ID, 'members', 'alice'), { status: 'revoking' });
     });
-    const bob = testFirestore(environment.authenticatedContext('bob'));
-    await assertFails(updateDoc(doc(bob, 'rooms', 'general', 'messages', 'm1'), { text: 'Hijacked', editedAt: serverTimestamp() }));
-    const alice = testFirestore(environment.authenticatedContext('alice'));
-    await assertSucceeds(updateDoc(doc(alice, 'rooms', 'general', 'messages', 'm1'), { text: 'Edited', editedAt: serverTimestamp() }));
+    await assertFails(getDoc(doc(testFirestore(environment.authenticatedContext('alice')), 'rooms', ROOM_ID, 'messages', 'm1')));
   });
 
-  it('keeps a message timestamp immutable when edited', async () => {
-    await environment.withSecurityRulesDisabled(async (context) => {
-      await setDoc(doc(testFirestore(context), 'rooms', 'general', 'messages', 'm1'), {
-        uid: 'alice', user: 'Alice', text: 'Original', timestamp: new Date(),
-      });
-    });
+  it('allows active members to read and create only authored user text', async () => {
+    await seedFirestore();
     const alice = testFirestore(environment.authenticatedContext('alice'));
-    await assertFails(updateDoc(doc(alice, 'rooms', 'general', 'messages', 'm1'), {
-      text: 'Edited', timestamp: serverTimestamp(), editedAt: serverTimestamp(),
+    await assertSucceeds(getDoc(doc(alice, 'rooms', ROOM_ID, 'messages', 'm1')));
+    await assertSucceeds(setDoc(doc(alice, 'rooms', ROOM_ID, 'messages', 'm2'), {
+      roomId: ROOM_ID,
+      senderId: 'alice',
+      senderType: 'user',
+      senderDisplayName: 'Alice',
+      kind: 'text',
+      text: 'Hello @Gemini',
+      mentions: [{ type: 'bot', id: 'gemini', label: 'Gemini', start: 6, end: 13 }],
+      createdAt: serverTimestamp(),
+      clientCreatedAt: Date.now(),
+    }));
+    await assertFails(setDoc(doc(alice, 'rooms', ROOM_ID, 'messages', 'bad-mention'), {
+      roomId: ROOM_ID,
+      senderId: 'alice',
+      senderType: 'user',
+      senderDisplayName: 'Alice',
+      kind: 'text',
+      text: 'Hello',
+      mentions: [{ type: 'bot', id: 'gemini', label: 'Gemini', start: 0, end: 99 }],
+      createdAt: serverTimestamp(),
     }));
   });
 
-  it('accepts a Google-hosted profile photo for the matching user', async () => {
+  it('rejects sender spoofing and client bot/system writes', async () => {
+    await seedFirestore();
     const alice = testFirestore(environment.authenticatedContext('alice'));
-    await assertSucceeds(setDoc(doc(alice, 'users', 'alice'), {
-      displayName: 'Alice',
-      photoURL: 'https://lh3.googleusercontent.com/a/ACg8ocKexample=s96-c',
+    const base = {
+      roomId: ROOM_ID,
+      senderDisplayName: 'Alice',
+      kind: 'text',
+      text: 'forged',
+      createdAt: serverTimestamp(),
+    };
+    await assertFails(setDoc(doc(alice, 'rooms', ROOM_ID, 'messages', 'spoof'), { ...base, senderId: 'owner', senderType: 'user' }));
+    await assertFails(setDoc(doc(alice, 'rooms', ROOM_ID, 'messages', 'bot'), { ...base, senderId: 'gemini', senderType: 'bot' }));
+    await assertFails(setDoc(doc(alice, 'rooms', ROOM_ID, 'messages', 'system'), { ...base, senderId: 'system', senderType: 'system' }));
+  });
+
+  it('prevents self elevation, member removal, and owner removal from clients', async () => {
+    await seedFirestore();
+    const alice = testFirestore(environment.authenticatedContext('alice'));
+    const owner = testFirestore(environment.authenticatedContext('owner'));
+    await assertFails(updateDoc(doc(alice, 'rooms', ROOM_ID, 'members', 'alice'), { role: 'owner' }));
+    await assertFails(deleteDoc(doc(owner, 'rooms', ROOM_ID, 'members', 'alice')));
+    await assertFails(deleteDoc(doc(owner, 'rooms', ROOM_ID, 'members', 'owner')));
+  });
+
+  it('allows only the author to edit or soft-delete mutable text fields', async () => {
+    await seedFirestore();
+    const alice = testFirestore(environment.authenticatedContext('alice'));
+    const owner = testFirestore(environment.authenticatedContext('owner'));
+    await assertFails(updateDoc(doc(owner, 'rooms', ROOM_ID, 'messages', 'm1'), { text: 'Hijacked', editedAt: serverTimestamp() }));
+    await assertSucceeds(updateDoc(doc(alice, 'rooms', ROOM_ID, 'messages', 'm1'), {
+      text: 'Edited', mentions: [], editedAt: serverTimestamp(),
+    }));
+    await assertSucceeds(updateDoc(doc(alice, 'rooms', ROOM_ID, 'messages', 'm1'), {
+      text: '此訊息已刪除', mentions: [], deletedAt: serverTimestamp(),
+    }));
+    await assertFails(updateDoc(doc(alice, 'rooms', ROOM_ID, 'messages', 'm1'), {
+      text: 'Undeleted', mentions: [], editedAt: serverTimestamp(),
     }));
   });
 
-  it('rejects a profile photo hosted anywhere but Google', async () => {
+  it('scopes read states and reactions to the authenticated member', async () => {
+    await seedFirestore();
     const alice = testFirestore(environment.authenticatedContext('alice'));
-    await assertFails(setDoc(doc(alice, 'users', 'alice'), {
-      displayName: 'Alice',
-      photoURL: 'https://tracker.example.com/pixel.png',
+    const readState = { lastReadAt: serverTimestamp(), lastReadMessageId: 'm1', updatedAt: serverTimestamp() };
+    await assertSucceeds(setDoc(doc(alice, 'rooms', ROOM_ID, 'readStates', 'alice'), readState));
+    await assertFails(setDoc(doc(alice, 'rooms', ROOM_ID, 'readStates', 'owner'), readState));
+    await assertSucceeds(setDoc(doc(alice, 'rooms', ROOM_ID, 'reactions', 'm1_alice'), {
+      messageId: 'm1', userId: 'alice', emoji: '👍', updatedAt: serverTimestamp(),
     }));
-  });
-
-  it('rejects a photo URL that only embeds the Google host elsewhere in the string', async () => {
-    const alice = testFirestore(environment.authenticatedContext('alice'));
-    await assertFails(setDoc(doc(alice, 'users', 'alice'), {
-      displayName: 'Alice',
-      photoURL: 'https://tracker.example.com/?u=https://lh3.googleusercontent.com/a/x',
+    await assertFails(setDoc(doc(alice, 'rooms', ROOM_ID, 'reactions', 'm1_owner'), {
+      messageId: 'm1', userId: 'owner', emoji: '👍', updatedAt: serverTimestamp(),
     }));
-  });
-
-  it('restricts profile writes to the matching user', async () => {
-    const alice = testFirestore(environment.authenticatedContext('alice'));
-    await assertFails(setDoc(doc(alice, 'users', 'bob'), { displayName: 'Bob' }));
-  });
-
-  it('restricts read-state writes to the matching user', async () => {
-    const alice = testFirestore(environment.authenticatedContext('alice'));
-    const value = { lastReadAt: serverTimestamp(), lastReadMessageId: 'm1', updatedAt: serverTimestamp() };
-    await assertSucceeds(setDoc(doc(alice, 'rooms', 'general', 'readStates', 'alice'), value));
-    await assertFails(setDoc(doc(alice, 'rooms', 'general', 'readStates', 'bob'), value));
   });
 });
 
-describe('Realtime Database rules', () => {
-  it('allows a user to write only their own V2 connection', async () => {
+describe('Realtime Database room ACL', () => {
+  it('denies room state when the membership mirror is missing', async () => {
     const alice = testDatabase(environment.authenticatedContext('alice'));
-    await assertSucceeds(set(ref(alice, 'presenceV2/alice/connections/tab-1'), { connectedAt: Date.now() }));
-    await assertFails(set(ref(alice, 'presenceV2/bob/connections/tab-1'), { connectedAt: Date.now() }));
+    await assertFails(get(ref(alice, `realtime/rooms/${ROOM_KEY}/presence`)));
+    await assertFails(set(ref(alice, `realtime/rooms/${ROOM_KEY}/presence/alice/connections/tab-1`), {
+      displayName: 'Alice', connectedAt: Date.now(),
+    }));
   });
 
-  it('keeps legacy and V2 presence isolated', async () => {
+  it('allows a mirrored member to read the room and write only their own connection', async () => {
+    await seedMirror();
     const alice = testDatabase(environment.authenticatedContext('alice'));
-    await assertSucceeds(set(ref(alice, 'presenceV2/alice/connections/tab-1'), { connectedAt: Date.now() }));
-    await assertSucceeds(set(ref(alice, 'presence/alice'), { state: 'online', displayName: 'Alice', last_changed: Date.now() }));
+    await assertSucceeds(get(ref(alice, `realtime/rooms/${ROOM_KEY}/presence`)));
+    await assertSucceeds(set(ref(alice, `realtime/rooms/${ROOM_KEY}/presence/alice/connections/tab-1`), {
+      displayName: 'Alice', connectedAt: Date.now(),
+    }));
+    await assertFails(set(ref(alice, `realtime/rooms/${ROOM_KEY}/presence/bob/connections/tab-1`), {
+      displayName: 'Alice', connectedAt: Date.now(),
+    }));
+  });
+
+  it('isolates rooms even when the user has a mirror elsewhere', async () => {
+    await seedMirror();
+    const alice = testDatabase(environment.authenticatedContext('alice'));
+    await assertFails(get(ref(alice, 'realtime/rooms/b3RoZXI/presence')));
+  });
+
+  it('fails closed immediately after a mirror is revoked', async () => {
+    await seedMirror();
+    const alice = testDatabase(environment.authenticatedContext('alice'));
+    await assertSucceeds(set(ref(alice, `realtime/rooms/${ROOM_KEY}/typing/alice/tab-1`), {
+      displayName: 'Alice', updatedAt: Date.now(),
+    }));
     await environment.withSecurityRulesDisabled(async (context) => {
-      await assertSucceeds(get(ref(testDatabase(context), 'presenceV2/alice/connections/tab-1')));
+      await set(ref(testDatabase(context), `realtime/rooms/${ROOM_KEY}/members/alice`), null);
+      await set(ref(testDatabase(context), `realtime/rooms/${ROOM_KEY}/typing/alice`), null);
     });
+    await assertFails(get(ref(alice, `realtime/rooms/${ROOM_KEY}/typing`)));
+    await assertFails(set(ref(alice, `realtime/rooms/${ROOM_KEY}/typing/alice/tab-2`), {
+      displayName: 'Alice', updatedAt: Date.now(),
+    }));
   });
 
-  it('isolates typing V2 by authenticated user', async () => {
+  it('supports multiple tabs owned by the same active member', async () => {
+    await seedMirror();
     const alice = testDatabase(environment.authenticatedContext('alice'));
-    await assertSucceeds(set(ref(alice, 'typingV2/cm9vbQ/alice/tab-1'), { displayName: 'Alice', updatedAt: Date.now() }));
-    await assertFails(set(ref(alice, 'typingV2/cm9vbQ/bob/tab-1'), { displayName: 'Alice', updatedAt: Date.now() }));
+    await assertSucceeds(set(ref(alice, `realtime/rooms/${ROOM_KEY}/presence/alice/connections/tab-1`), {
+      displayName: 'Alice', connectedAt: Date.now(),
+    }));
+    await assertSucceeds(set(ref(alice, `realtime/rooms/${ROOM_KEY}/presence/alice/connections/tab-2`), {
+      displayName: 'Alice', connectedAt: Date.now(),
+    }));
   });
 });

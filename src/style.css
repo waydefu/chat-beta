@@ -505,3 +505,37 @@ button:active:not(:disabled){transform:scale(.97)}
     scroll-behavior:auto!important;
   }
 }
+
+/* Chat Lite 3.0 feature surfaces */
+.composer-tool{flex:0 0 38px;width:38px;height:44px;color:var(--muted)}
+.composer-tool.recording{color:#fff;background:var(--danger);animation:ring-pulse 1.4s ease-out infinite}
+.voice-controls{display:flex;align-items:center;gap:8px;max-width:920px;margin:0 auto 8px;padding:9px 12px;border:1px solid var(--line);border-radius:14px;background:var(--surface-2)}
+.voice-controls[hidden]{display:none}.voice-controls span{margin-right:auto;color:var(--danger);font-weight:750}.voice-preview-dialog audio{width:min(420px,75vw)}
+.composer-meta .text-btn{padding:0;border:0;background:transparent;color:var(--danger);font:inherit;font-weight:750}
+.mention-list,.sticker-picker{position:absolute;right:22px;bottom:92px;z-index:30;width:min(360px,calc(100% - 44px));padding:7px;border:1px solid var(--line);border-radius:16px;background:var(--surface);box-shadow:var(--shadow)}
+.mention-list button{display:block;width:100%;border:0;border-radius:10px;padding:10px 12px;background:transparent;color:var(--text);text-align:left}
+.mention-list button[aria-selected=true],.mention-list button:hover{background:var(--blue-soft);color:var(--blue)}
+.sticker-picker{display:grid;grid-template-columns:repeat(6,1fr);gap:5px}
+.sticker-picker[hidden],.mention-list[hidden]{display:none}
+.sticker-picker button{border:0;border-radius:12px;padding:9px 4px;background:var(--surface-2);font-size:1.35rem}
+.mention{display:inline-block;border-radius:5px;padding:0 3px;background:var(--blue-soft);color:var(--blue);font-weight:750}
+.message-row.you .mention{background:#ffffff20;color:#dce7ff}
+.reaction-bar{display:flex;flex-wrap:wrap;gap:4px;margin-top:5px}
+.reaction-bar button{border:1px solid var(--line);border-radius:999px;padding:3px 7px;background:var(--surface);color:var(--muted);font-size:.7rem}
+.reaction-bar button.selected{border-color:var(--blue);background:var(--blue-soft);color:var(--blue)}
+.sticker-message{font-size:3.2rem;line-height:1.15}
+.sticker-message img{display:block;width:min(160px,36vw);height:min(160px,36vw);object-fit:contain}
+.attachment-card{max-width:100%;border:1px solid var(--line);border-radius:12px;padding:10px 12px;background:var(--surface-2);color:inherit;text-align:left;overflow-wrap:anywhere}
+.attachment-image,.attachment-media{display:block;max-width:min(100%,520px);max-height:420px;margin-bottom:7px;border-radius:12px;background:var(--surface-2);object-fit:contain}
+.attachment-media{width:100%}.attachment-label{display:block;font-size:.72rem;color:var(--muted)}
+.ai-draft .message-bubble{border-style:dashed;background:color-mix(in srgb,var(--blue-soft) 50%,var(--surface))}
+.ai-draft .message-text::after{content:"";display:inline-block;width:7px;height:1em;margin-left:4px;vertical-align:-2px;background:var(--blue);animation:ring-pulse 1.2s ease-in-out infinite}
+.call-stage{position:fixed;right:18px;bottom:92px;z-index:70;display:grid;grid-template-columns:repeat(2,minmax(120px,220px));gap:8px;max-width:calc(100vw - 36px);padding:8px;border:1px solid #ffffff22;border-radius:18px;background:#07142fdd;box-shadow:var(--shadow);backdrop-filter:blur(14px)}
+.call-stage:empty{display:none}.call-video{width:100%;aspect-ratio:16/10;border-radius:12px;background:#020817;object-fit:cover}.call-video.local{transform:scaleX(-1)}
+.composer-shell{position:relative}
+
+@media(max-width:720px){
+  .composer-tool{flex-basis:34px;width:34px}
+  .header-actions .icon-btn{width:36px}
+  .mention-list,.sticker-picker{right:9px;bottom:84px;width:calc(100% - 18px)}
+}

@@ -61,6 +61,8 @@
             <p id="connection-status"><span class="status-dot"></span>準備連線</p>
           </div>
           <div class="header-actions">
+            <button id="voice-call-btn" class="icon-btn" type="button" aria-label="開始語音通話" disabled>☎</button>
+            <button id="video-call-btn" class="icon-btn" type="button" aria-label="開始視訊通話" disabled>▣</button>
             <button id="search-toggle-btn" class="icon-btn" type="button" aria-label="搜尋已載入訊息" aria-controls="search-bar" aria-expanded="false">⌕</button>
             <button id="members-toggle-btn" class="icon-btn" type="button" aria-label="顯示在線使用者" aria-controls="presence-panel" aria-expanded="false">◎</button>
           </div>
@@ -69,6 +71,7 @@
         <div id="search-bar" class="search-bar" hidden>
           <label class="sr-only" for="message-search">搜尋已載入訊息</label>
           <input id="message-search" type="search" placeholder="搜尋已載入的訊息…" />
+          <button id="historical-search-btn" class="text-btn" type="button">搜尋歷史</button>
           <button id="close-search-btn" class="text-btn" type="button">關閉</button>
         </div>
 
@@ -93,12 +96,33 @@
             <div><span>正在編輯</span><strong>更新後不會改變原始時間</strong></div>
             <button id="cancel-edit-btn" class="icon-btn" type="button" aria-label="取消編輯">×</button>
           </div>
+          <div id="mention-list" class="mention-list" role="listbox" aria-label="提及建議" hidden></div>
+          <div id="sticker-picker" class="sticker-picker" aria-label="貼圖" hidden>
+            <button type="button" data-sticker="wave" aria-label="揮手">👋</button>
+            <button type="button" data-sticker="heart" aria-label="愛心">💙</button>
+            <button type="button" data-sticker="laugh" aria-label="大笑">😂</button>
+            <button type="button" data-sticker="party" aria-label="慶祝">🎉</button>
+            <button type="button" data-sticker="thumbs-up" aria-label="讚">👍</button>
+            <button type="button" data-sticker="coffee" aria-label="咖啡">☕</button>
+            <button id="custom-sticker-btn" type="button" aria-label="上傳自訂貼圖">＋</button>
+            <input id="custom-sticker-input" type="file" accept="image/png,image/jpeg,image/webp" hidden />
+          </div>
+          <div id="voice-controls" class="voice-controls" role="group" aria-label="語音錄製控制" hidden>
+            <span id="voice-status" role="status">錄音中</span>
+            <button id="voice-pause-btn" class="secondary-btn" type="button">暫停</button>
+            <button id="voice-cancel-btn" class="secondary-btn" type="button">取消</button>
+            <button id="voice-finish-btn" class="primary-btn" type="button">完成</button>
+          </div>
           <div class="composer">
+            <button id="attach-btn" class="icon-btn composer-tool" type="button" aria-label="附加檔案" disabled>＋</button>
+            <input id="attachment-input" type="file" hidden />
+            <button id="voice-message-btn" class="icon-btn composer-tool" type="button" aria-label="錄製語音訊息" disabled>●</button>
+            <button id="sticker-btn" class="icon-btn composer-tool" type="button" aria-label="傳送貼圖" disabled>☺</button>
             <label class="sr-only" for="message-input">輸入訊息</label>
-            <textarea id="message-input" maxlength="1000" rows="1" placeholder="先選擇聊天室…" disabled></textarea>
+            <textarea id="message-input" maxlength="1000" rows="1" placeholder="先選擇聊天室…" disabled role="combobox" aria-autocomplete="list" aria-controls="mention-list" aria-expanded="false"></textarea>
             <button id="send-btn" class="send-btn" type="button" disabled aria-label="送出訊息">➤</button>
           </div>
-          <div class="composer-meta"><span>Enter 送出 · Shift + Enter 換行</span><span id="message-counter">0 / 1000</span></div>
+          <div class="composer-meta"><span id="upload-status">Enter 送出 · Shift + Enter 換行</span><button id="upload-cancel-btn" class="text-btn" type="button" hidden>取消上傳</button><span id="message-counter">0 / 1000</span></div>
         </div>
       </section>
 
@@ -120,6 +144,14 @@
         <h2 id="confirm-title">確認操作</h2>
         <p id="confirm-copy"></p>
         <div class="dialog-actions"><button value="cancel" class="secondary-btn">取消</button><button id="confirm-action-btn" value="confirm" class="danger-btn">確認</button></div>
+      </form>
+    </dialog>
+
+    <dialog id="voice-preview-dialog" class="confirm-dialog voice-preview-dialog">
+      <form method="dialog">
+        <h2>預覽語音訊息</h2>
+        <audio id="voice-preview-audio" controls preload="metadata"></audio>
+        <div class="dialog-actions"><button value="cancel" class="secondary-btn">取消</button><button value="send" class="primary-btn">傳送</button></div>
       </form>
     </dialog>
 

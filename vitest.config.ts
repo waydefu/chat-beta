@@ -5,5 +5,10 @@ export default defineConfig({
     include: ['tests/**/*.test.ts'],
     exclude: ['tests/rules.test.ts'],
     environment: 'node',
+    coverage: {
+      provider: 'v8',
+      include: ['src/utils.ts'],
+      reporter: ['text', 'html'],
+    },
   },
 });

@@ -1,6 +1,6 @@
 const CACHE_PREFIX = 'chat-lite-';
-const CURRENT_CACHE = 'chat-lite-v5-shell';
-const BASE_PATH = '/chat-beta/';
+const CURRENT_CACHE = 'chat-lite-v6-shell';
+const BASE_PATH = new URL(self.registration.scope).pathname;
 const SHELL = [
   BASE_PATH,
   `${BASE_PATH}index.html`,
@@ -32,7 +32,7 @@ self.addEventListener('activate', (event) => {
 // Push is handled directly off the raw event rather than through the Firebase
 // messaging SDK: that would need importScripts() from the gstatic CDN on every
 // service worker start, which defeats the offline shell this worker exists for.
-// The sender must therefore use a data payload (see functions/index.js).
+// The sender must therefore use a data payload (see functions/src/notifications/push.ts).
 self.addEventListener('push', (event) => {
   if (!event.data) return;
   let payload = {};

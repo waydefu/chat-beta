@@ -5,27 +5,15 @@
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <link rel="icon" href="./image/logo-v2.png" />
     <title>隱私說明｜Chat Lite</title>
-    <style>
-      body{margin:0;font:16px/1.75 system-ui,"Microsoft JhengHei",sans-serif;background:#f4f6fb;color:#16213a}
-      main{max-width:760px;margin:48px auto;padding:36px;background:#fff;border-radius:22px;box-shadow:0 16px 50px #10204a18}
-      a{color:#315ee7} h1,h2{line-height:1.25} small{color:#64708a}
-      @media(max-width:700px){main{margin:0;padding:28px 20px;border-radius:0;min-height:100vh}}
-    </style>
+    <style>body{margin:0;font:16px/1.75 system-ui,"Microsoft JhengHei",sans-serif;background:#f4f6fb;color:#16213a}main{max-width:760px;margin:48px auto;padding:36px;background:#fff;border-radius:22px;box-shadow:0 16px 50px #10204a18}a{color:#315ee7}h1,h2{line-height:1.25}small{color:#64708a}@media(max-width:700px){main{margin:0;padding:28px 20px;border-radius:0;min-height:100vh}}</style>
   </head>
-  <body>
-    <main>
-      <a href="./">← 返回 Chat Lite</a>
-      <h1>隱私說明</h1>
-      <small>最後更新：2026 年 8 月 11 日</small>
-      <p>Chat Lite 使用 Google Firebase 提供登入、訊息同步與在線狀態。使用服務時會處理你的 Google 顯示名稱、電子郵件、Firebase 使用者識別碼、聊天室訊息、閱讀狀態、在線狀態與打字狀態。</p>
-      <h2>資料用途</h2>
-      <p>資料僅用於驗證身分、顯示聊天室內容、同步訊息與提供即時互動。Chat Lite 不會出售個人資料。</p>
-      <h2>裝置快取</h2>
-      <p>離線聊天資料預設不持久保存。只有在你啟用「可信裝置離線資料」後，瀏覽器才會保留 Firebase 快取；明確登出時會清除該快取。</p>
-      <h2>你的選擇</h2>
-      <p>你可以刪除自己發送的訊息並隨時登出。聊天室內容可能由其他已登入使用者看見，請勿傳送敏感資訊。</p>
-      <h2>第三方服務</h2>
-      <p>Google Firebase 與 Google 登入會依其各自的隱私條款處理資料。正式營運前，服務擁有者應補充聯絡方式並完成法律審閱。</p>
-    </main>
-  </body>
+  <body><main>
+    <a href="./">← 返回 Chat Lite</a>
+    <h1>隱私說明</h1><small>最後更新：2026 年 8 月 12 日</small>
+    <p>Chat Lite 會處理 Google 顯示名稱、電子郵件、Firebase 使用者 ID、房間 membership、訊息、附件 metadata、已讀狀態，以及短生命週期的 presence、typing、通話與 AI 生成狀態。</p>
+    <h2>可見範圍</h2><p>登入者可看見 public room 名稱；只有 active member 能讀內容。Firestore membership 是授權來源。訊息軟刪除後可能保留最小稽核 metadata。</p>
+    <h2>第三方處理者</h2><p>Firebase 提供登入、永久資料、即時狀態、Functions、推播與 Hosting；Gemini 處理被提及時送出的必要聊天 context；Cloudflare R2 保存媒體；LiveKit Cloud 傳輸通話媒體；Algolia 索引房間內的文字訊息。附件內容與私人 AI prompt 不送到 Algolia。</p>
+    <h2>保存與裝置資料</h2><p>AI draft 最遲十分鐘清除；未完成 upload 於 24 小時清理，orphan object 七天後清理。永久訊息與 ready attachment 依房間保存政策保留。只有啟用「可信裝置離線資料」後，瀏覽器才保留 Firestore cache。</p>
+    <h2>你的選擇</h2><p>你可關閉推播、取消上傳/AI generation、軟刪除自己的文字訊息並登出。正式營運前服務擁有者仍須補上聯絡方式、資料主體請求流程與適用法域的法律審閱。</p>
+  </main></body>
 </html>

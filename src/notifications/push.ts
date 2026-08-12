@@ -1,15 +1,8 @@
-import {
-  deleteToken,
-  getMessaging,
-  getToken,
-  isSupported,
-  onMessage,
-  type Messaging,
-  type MessagePayload,
-} from 'firebase/messaging';
 import { deleteDoc, doc, serverTimestamp, setDoc } from 'firebase/firestore';
+import type { Messaging } from 'firebase/messaging';
 
-import { firebaseApp, firestore } from './firebase';
+import { firebaseApp } from '../firebase/app';
+import { firestore } from '../firebase/firestore-client';
 
 export const PUSH_PREFERENCE_KEY = 'chat-lite:push';
 
@@ -37,13 +30,15 @@ export async function pushSupported(): Promise<boolean> {
   if (!pushConfigured()) return false;
   if (!('Notification' in window) || !('serviceWorker' in navigator)) return false;
   try {
+    const { isSupported } = await import('firebase/messaging');
     return await isSupported();
   } catch {
     return false;
   }
 }
 
-function ensureMessaging(): Messaging {
+async function ensureMessaging(): Promise<Messaging> {
+  const { getMessaging } = await import('firebase/messaging');
   messaging ??= getMessaging(firebaseApp);
   return messaging;
 }
@@ -72,7 +67,8 @@ export async function enablePush(uid: string): Promise<string | null> {
       return '此環境沒有註冊 Service Worker，無法啟用推播。';
     }
     const registration = await navigator.serviceWorker.ready;
-    const token = await getToken(ensureMessaging(), {
+    const { getToken } = await import('firebase/messaging');
+    const token = await getToken(await ensureMessaging(), {
       vapidKey: VAPID_KEY,
       serviceWorkerRegistration: registration,
     });
@@ -96,7 +92,8 @@ export async function disablePush(uid: string): Promise<void> {
   if (!token) return;
   try {
     await deleteDoc(doc(firestore, 'users', uid, 'pushTokens', tokenDocId(token)));
-    await deleteToken(ensureMessaging());
+    const { deleteToken } = await import('firebase/messaging');
+    await deleteToken(await ensureMessaging());
   } catch {
     /* the token document is the thing that matters; a failed deleteToken is harmless */
   }
@@ -108,10 +105,11 @@ export async function disablePush(uid: string): Promise<void> {
  */
 export function watchForegroundPush(show: (message: string) => void): void {
   if (!pushConfigured()) return;
-  void pushSupported().then((supported) => {
+  void pushSupported().then(async (supported) => {
     if (!supported) return;
     foregroundUnsub?.();
-    foregroundUnsub = onMessage(ensureMessaging(), (payload: MessagePayload) => {
+    const { onMessage } = await import('firebase/messaging');
+    foregroundUnsub = onMessage(await ensureMessaging(), (payload) => {
       const title = payload.notification?.title ?? payload.data?.title ?? '新訊息';
       const body = payload.notification?.body ?? payload.data?.body ?? '';
       show(body ? `${title}：${body}` : title);
@@ -123,4 +121,23 @@ export function stopForegroundPush(): void {
   foregroundUnsub?.();
   foregroundUnsub = null;
   currentToken = null;
+}
+
+export async function configuredPushState(uid: string): Promise<{
+  supported: boolean;
+  enabled: boolean;
+  error: string | null;
+}> {
+  const supported = await pushSupported();
+  if (!supported) return { supported, enabled: false, error: null };
+  const preferred = localStorage.getItem(PUSH_PREFERENCE_KEY) === 'true';
+  const enabled = preferred && Notification.permission === 'granted';
+  const error = enabled ? await enablePush(uid) : null;
+  return { supported, enabled: enabled && !error, error };
+}
+
+export async function setPushPreference(uid: string, enabled: boolean): Promise<string | null> {
+  const error = enabled ? await enablePush(uid) : (await disablePush(uid), null);
+  localStorage.setItem(PUSH_PREFERENCE_KEY, String(enabled && !error));
+  return error;
 }
