@@ -72,7 +72,8 @@ The following Node.js 22, second-generation Functions are live in `asia-east1`:
 - Restrictive RTDB Rules are live.
 - Anonymous production reads of room content were verified denied (Firestore `403`, RTDB `401`).
 - Firebase Hosting security headers and CSP are live.
-- Google Auth requires `https://apis.google.com` in both `script-src` and `frame-src`; removing either reproduces the login failure.
+- Google Auth requires `https://apis.google.com` in `script-src`, and both `https://apis.google.com` and the auth domain `https://f-chat-wayde-fu.firebaseapp.com` in `frame-src`; removing any of them reproduces the login failure.
+- `Cross-Origin-Opener-Policy` is `same-origin-allow-popups` so the `signInWithPopup` window handle survives popup cancellation polling.
 - Production source maps are built for diagnostics but excluded from Hosting uploads.
 - Core signed-in JavaScript is `199.80 kB` gzip under the production configuration.
 - Google Sign-In startup was browser-smoked after the CSP fix: no CSP console error, no `auth/internal-error`, and the Auth iframe was created.
