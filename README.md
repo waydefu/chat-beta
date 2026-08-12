@@ -1,5 +1,7 @@
 # Chat Lite 3.0
 
+Production operators should start with [Production handoff](docs/HANDOFF.md). It records the live deployment, migration and backup references, provider gates, and remaining follow-up work.
+
 Chat Lite 是以 vanilla TypeScript、Firebase Hosting、Firestore 與 Realtime Database 建立的多人聊天室。3.0 將授權來源收斂到 Firestore room membership，並把 presence、typing 與 AI draft 限制在具 Room ACL 的 RTDB ephemeral namespace。
 
 ## 本機開發

@@ -1,5 +1,7 @@
 # ACL migration runbook
 
+The 2026-08-12 production execution record, backup references, migration totals, and remaining observation gates are recorded in [HANDOFF](HANDOFF.md). This runbook remains the procedure for future migrations and rollback drills.
+
 不可直接把新 Rules 部署到 legacy client。每一步都要保存 command output、操作者、時間、Firebase project ID 與對應備份 reference；`artifacts/` 已被 gitignore，migration report 可能含 UID，不可提交到 Git。
 
 ## 0. Preflight
