@@ -6,6 +6,7 @@ import {
   type Firestore,
 } from 'firebase-admin/firestore';
 
+import { profileDisplayName } from '../shared/membership.js';
 import { operationId } from '../shared/validation.js';
 
 const args = process.argv.slice(2);
@@ -119,6 +120,7 @@ async function migrateRoom(audit: RoomAudit): Promise<void> {
   });
   const room = (await roomRef.get()).data() || {};
   for (const uid of audit.inferredMembers) {
+    const displayName = await profileDisplayName(uid);
     await firestore.runTransaction(async (transaction) => {
       const role = uid === audit.ownerId ? 'owner' : 'member';
       const version = 1;
@@ -134,7 +136,7 @@ async function migrateRoom(audit: RoomAudit): Promise<void> {
         userId: uid,
         role,
         status: 'active',
-        displayName: uid,
+        displayName,
         version,
         joinedAt: FieldValue.serverTimestamp(),
         updatedAt: FieldValue.serverTimestamp(),

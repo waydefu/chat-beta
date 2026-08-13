@@ -3,7 +3,7 @@ import { HttpsError, onCall } from 'firebase-functions/v2/https';
 
 import { firestore } from '../admin.js';
 import { appCheckEnforced, REGION } from '../config.js';
-import { getActiveMembership } from '../shared/membership.js';
+import { getActiveMembership, profileDisplayName } from '../shared/membership.js';
 import { operationId, requireAuth, requireRecord, requireString } from '../shared/validation.js';
 import { directRoomKey } from './direct-room-key.js';
 
@@ -21,6 +21,7 @@ export const createDirectRoom = onCall(
       getActiveMembership(sourceRoomId, auth.uid),
       getActiveMembership(sourceRoomId, targetUid),
     ]);
+    const targetDisplayName = await profileDisplayName(targetUid);
     const key = directRoomKey(auth.uid, targetUid);
     const indexRef = firestore.doc(`directRoomKeys/${key}`);
     const roomId = `dm_${key.slice(0, 32)}`;
@@ -45,7 +46,7 @@ export const createDirectRoom = onCall(
           userId: uid,
           role,
           status: 'active',
-          displayName: uid === auth.uid ? String(auth.token.name ?? '使用者') : targetUid,
+          displayName: uid === auth.uid ? String(auth.token.name ?? '使用者') : targetDisplayName,
           version,
           joinedAt: FieldValue.serverTimestamp(),
           updatedAt: FieldValue.serverTimestamp(),
