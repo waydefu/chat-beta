@@ -64,6 +64,7 @@ grep -rn "secrets:" functions/src
 | --- | --- | --- |
 | `notification_backend` | `notifyOnMessage`、`sendStickerMessage` | 只檢查 `migration_verified` |
 | `rtc_backend` | `startLiveKitCall`、`getLiveKitToken`、`endLiveKitCall` | `migration_verified` 與 `providers_verified` |
+| `ai_backend` | `generateGeminiReply`、`cleanupExpiredAIDrafts` | `migration_verified` 與 `providers_verified` |
 
 `notification_backend` 不設 provider gate，因為那兩支沒有任何 secret 宣告。理由與 PR #13 把 `hosting_client` 的 gate 拿掉一樣：不要求一個無法照實回答的聲明。
 
@@ -204,7 +205,7 @@ firebase functions:delete startLiveKitCall getLiveKitToken endLiveKitCall --proj
 共同前置與批次 B 相同（角色、workflow 階段、部署前檢查）。各自的 gate 沿用 HANDOFF〈Required provider gates〉：
 
 - **批次 C（R2）**：除了四個 secret，還要先設定 bucket CORS、lifecycle rule、配額，並確認 orphan cleanup 能正確刪除未 finalize 的物件。這批會啟用兩支排程 Function，部署帳號屆時需要 Cloud Scheduler 權限。
-- **批次 D（Gemini）**：`GEMINI_API_KEY` 之外，要透過 Remote Config 釘住一個穩定的模型版本並確認用量與速率限制。`cleanupExpiredAIDrafts` 跟這批一起出——它清的是 AI 草稿，Gemini 沒開之前部署它沒有意義。
+- **批次 D（Gemini）**：見第 7 節，這批有自己的 `ai_backend` 階段。
 - **批次 E（Algolia）**：index 必須是 room-bound，且要驗證訊息刪除會同步刪除索引，否則等同把已刪訊息留在第三方可搜尋。
 
 每一批都要在受保護 staging 做完 smoke test 才動 production，並且更新 privacy／terms。
@@ -216,6 +217,59 @@ firebase functions:delete startLiveKitCall getLiveKitToken endLiveKitCall --proj
 - 不要在還沒補齊角色前，改用個人帳號從本機或 Cloud Shell 手動部署 Functions。那會讓 production 的實際狀態與 workflow 記錄脫節，正是 WIF 當初要解決的問題。
 - 不要把 secret 值貼進 commit message、PR 描述、issue 或這個 repo 的任何檔案。
 
-## 7. 交接時要更新的地方
+## 7. 批次 D：AI 回覆（Gemini）
+
+### 7.1 取得並寫入金鑰
+
+到 <https://aistudio.google.com> → Get API key → Create API key，選 `f-chat-wayde-fu` 專案。然後：
+
+```bash
+node node_modules/firebase-tools/lib/bin/firebase.js functions:secrets:set GEMINI_API_KEY --project f-chat-wayde-fu
+```
+
+貼值時**只貼金鑰本身**，不要帶 `GEMINI_API_KEY=` 前綴。LiveKit 那次就是整行貼進去，簽出來的憑證當然無效。設完可以驗一下長度合不合理，這個指令不會印出內容：
+
+```bash
+node node_modules/firebase-tools/lib/bin/firebase.js functions:secrets:access GEMINI_API_KEY --project f-chat-wayde-fu | tr -d '\r\n' | awk '{print "len=" length($0)}'
+```
+
+### 7.2 釘住模型版本
+
+[model-config.ts](../functions/src/bots/model-config.ts) 從 Remote Config 讀 `gemini_model`，讀不到才退回程式碼裡寫死的備援值，並且快取五分鐘。**上線前要在 Remote Config 明確設定這個參數**，否則模型版本由程式碼裡那個可能已經過期的常數決定。
+
+Firebase Console → Remote Config → 新增參數 `gemini_model`，值填一個目前有效的穩定模型 ID。改動五分鐘內生效，不需要重新部署。
+
+### 7.3 隱私說明先上
+
+Gemini 會把聊天內容送給 Google，這是新的第三方處理。`privacy.html` 已經寫好對應段落，但**必須先跑 `hosting_client` 部署讓它生效，再部署 `ai_backend`**。揭露要走在處理前面。
+
+### 7.4 部署
+
+```bash
+gh workflow run "Deploy Firebase production" --repo waydefu/chat-beta -f rollout_phase=ai_backend -f migration_verified=true -f providers_verified=true
+```
+
+`providers_verified` 在這個階段限定指 Gemini 已設定並驗過，不是全部 provider。
+
+`cleanupExpiredAIDrafts` 是每五分鐘的排程，所以這個階段需要 `roles/cloudscheduler.admin`。
+
+### 7.5 驗收
+
+1. 在訊息裡用 `@` 選單提及 Gemini（**打字打出「Gemini」不會觸發**，只有結構化的提及才算），送出後應看到逐字串流的回覆。
+2. 串流中按取消，草稿應消失且不留下最終訊息。
+3. 另一個帳號在同一房間應看得到生成中的草稿。
+4. Firestore `rooms/{roomId}/aiRequests/{runId}` 有 status、usage、latency、model 紀錄。
+5. Cloud Logging 確認**完整 prompt 沒有被寫進日誌**。
+6. 十分鐘後確認過期草稿被清掉。
+
+### 7.6 回滾
+
+```bash
+firebase functions:delete generateGeminiReply cleanupExpiredAIDrafts --project f-chat-wayde-fu --region asia-east1
+```
+
+刪掉後前端提及 Gemini 會失敗，`privacy.html` 也要改回「尚未啟用」。
+
+## 8. 交接時要更新的地方
 
 每完成一個批次，更新 [HANDOFF](HANDOFF.md) 的〈Provider integrations not yet production-ready〉與〈Immediate follow-up〉，並把該批次的 Functions 從這份文件第 0 節的「未部署」表移到「已上線」。

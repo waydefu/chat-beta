@@ -12,6 +12,7 @@ on:
           - additive_backend
           - notification_backend
           - rtc_backend
+          - ai_backend
           - feature_backend
           - hosting_client
           - restrictive_rules
@@ -78,6 +79,7 @@ jobs:
           MEMBERSHIP_FUNCTIONS="functions:createDirectRoom,functions:createOrJoinPublicRoom,functions:revokeRoomMember,functions:syncMembershipMirror,functions:reconcileMembershipMirrors"
           NOTIFICATION_FUNCTIONS="functions:notifyOnMessage,functions:sendStickerMessage"
           RTC_FUNCTIONS="functions:startLiveKitCall,functions:getLiveKitToken,functions:endLiveKitCall"
+          AI_FUNCTIONS="functions:generateGeminiReply,functions:cleanupExpiredAIDrafts"
           V3_FUNCTIONS="$MEMBERSHIP_FUNCTIONS,functions:generateGeminiReply,functions:cleanupExpiredAIDrafts,functions:cleanupExpiredUploads,functions:cleanupOrphanR2Objects,functions:finalizeUpload,functions:getAttachmentDownloadUrl,functions:requestUpload,functions:endLiveKitCall,functions:getLiveKitToken,functions:startLiveKitCall,functions:notifyOnMessage,functions:searchMessages,functions:syncMessageSearchIndex,functions:cleanupExpiredCustomStickerUploads,functions:deleteCustomSticker,functions:finalizeCustomStickerUpload,functions:getCustomStickerDownloadUrl,functions:requestCustomStickerUpload,functions:sendStickerMessage"
           case "$ROLLOUT_PHASE" in
             additive_backend)
@@ -95,6 +97,15 @@ jobs:
               test "$MIGRATION_VERIFIED" = "true"
               test "${{ inputs.providers_verified }}" = "true"
               pnpm exec firebase deploy --project f-chat-wayde-fu --force --only "$RTC_FUNCTIONS"
+              ;;
+            ai_backend)
+              # Scoped provider gate: this attests Gemini only. The generation
+              # Function needs GEMINI_API_KEY, and cleanupExpiredAIDrafts only
+              # has drafts to clear once generation is running, so they ship
+              # together.
+              test "$MIGRATION_VERIFIED" = "true"
+              test "${{ inputs.providers_verified }}" = "true"
+              pnpm exec firebase deploy --project f-chat-wayde-fu --force --only "$AI_FUNCTIONS"
               ;;
             feature_backend)
               test "$MIGRATION_VERIFIED" = "true"
