@@ -434,7 +434,18 @@ function renderMessages(scroll = false): void {
     fragment.append(row);
   }
   list.replaceChildren(fragment);
-  list.scrollTo({ top: follow ? list.scrollHeight : previousTop, behavior: 'instant' });
+  if (follow) pinToEnd(list); else list.scrollTop = previousTop;
+}
+
+/**
+ * The composer shrinking back to one line, the mobile keyboard opening, and
+ * sticker or attachment content arriving after its row is in place all change
+ * the list's height once the first measurement is already spent. Re-assert on
+ * the next frame so those cases do not leave the view short of the end.
+ */
+function pinToEnd(list: HTMLElement): void {
+  list.scrollTop = list.scrollHeight;
+  window.requestAnimationFrame(() => { list.scrollTop = list.scrollHeight; });
 }
 
 function renderMessage(message: ChatMessage): HTMLElement {
@@ -629,6 +640,11 @@ async function submitMessage(): Promise<void> {
       cancelEditing();
       return;
     }
+    // Firestore echoes the write locally, so watchRecentMessages can fire while
+    // this await is still pending. Arming the flag afterwards is too late - that
+    // render has already decided not to scroll, and on a phone the sender is
+    // often a little short of the end, so the follow check does not cover it.
+    scrollAfterNextRender = true;
     const sourceMessageId = await sendTextMessage({
       roomId,
       senderId: user.uid,
@@ -637,7 +653,6 @@ async function submitMessage(): Promise<void> {
       mentions,
       ...(replyToId ? { replyToId } : {}),
     });
-    scrollAfterNextRender = true;
     ui.input.value = '';
     cancelReply();
     updateComposer();
