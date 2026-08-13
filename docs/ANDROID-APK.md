@@ -14,7 +14,7 @@ Last updated: 2026-08-13 (Asia/Taipei)
 | package name | `com.waydefu.fchat` |
 | 分發方式 | **側載，不上架 Google Play** |
 | 簽章 keystore 保管 | 雲端硬碟一份，密碼記在桌面文字檔（風險見第 6 節） |
-| 螢幕分享 | **待決**，見 4.2 第 4 點。技術上 Android 沒有這個 API，「保留」需要另外決定實作方式 |
+| 螢幕分享 | **web 版保留，APK 版隱藏按鈕。先擱著，不是放棄**——見 4.2 第 4 點與 6.3 |
 
 前置條件不變：**這些工作都排在通話後端（FEATURE-ENABLEMENT 批次 B）上線之後**。通話沒開就做 APK，做出來是一個按下去會失敗的通話鍵，也無從驗收。
 
@@ -51,7 +51,7 @@ PWA 的完成度只到「可安裝」的最低限度：
 | 需要改的 web 程式碼 | 幾乎沒有 | 五處，見 4.2 |
 | 網站更新 | Hosting 一部署就生效，不必重新送審 | 要重新出版本（除非另接 OTA） |
 | 通話（麥克風／相機） | 走 Chrome，可用；WebView fallback 不可用（見 3.3） | 可用，但要處理權限 |
-| 螢幕分享 | 走 Chrome，可用 | **不可用**，見 4.2 |
+| 螢幕分享 | 走 Chrome，可用 | WebView 沒有這個 API。已決定 App 版隱藏、web 版保留，見 6.3 |
 | 推播 | Chrome 委派通知給 App，需實測 | 原生 FCM，但後端要改 |
 | 背景來電響鈴 | 做不到 | 可做，但要額外投入 |
 | Firebase 要新增 Android app | 不需要 | 需要 |
@@ -132,13 +132,11 @@ Bubblewrap CLI 由 Google Chrome Labs 維護，目前版本 1.25.0，維護活�
 1. **Google 登入**。[src/firebase/auth-client.ts](../src/firebase/auth-client.ts) 用的 `signInWithPopup` 在 WebView 裡不會動。要換成原生登入（`@capacitor-firebase/authentication` 的 `signInWithGoogle()`）取得 credential，再交給 JS SDK 的 `signInWithCredential()`，並確保原生與 JS 兩邊的登入狀態同步。
 2. **推播 payload**。[functions/src/notifications/push.ts](../functions/src/notifications/push.ts) 目前只送 data-only 訊息加 `webpush` 選項。Android 原生端在 App 被系統結束時，data-only 訊息不會顯示通知；而且 FCM 會以七天的行為紀錄判斷，若高優先級訊息長期不產生使用者可見的通知，會把它降級成一般優先級。要補 `android` 區塊帶 `notification` 與 `priority: 'high'`。這是後端改動，會同時影響 web 端，要一起回歸測試。
 3. **App Check provider**。[src/firebase/app-check.ts](../src/firebase/app-check.ts) 寫死 `ReCaptchaEnterpriseProvider`。Android 要走 Play Integrity，需要依執行環境分支。目前 `APP_CHECK_ENFORCED_FEATURES` 是空的所以不會擋，但在啟用強制之前必須處理，否則 APK 使用者會被全面擋下。
-4. **螢幕分享——待決，且不是取捨問題而是能力問題**。`getDisplayMedia` 至今仍是桌面瀏覽器限定；Chromium 在 Android 上刻意把這個 API 隱藏起來，好讓 JavaScript 的功能偵測能正確回報「不支援」。也就是說 Capacitor 的 WebView 裡**不存在**可用的螢幕擷取 API，這不是設定或權限能解決的。可選的三條路：
+4. **螢幕分享：APK 版隱藏按鈕（已決定，見 6.3 的完整理由）**。這不是取捨問題而是能力問題——`getDisplayMedia` 至今仍是桌面瀏覽器限定，Chromium 在 Android 上刻意把這個 API 隱藏起來，好讓 JavaScript 的功能偵測能正確回報「不支援」。Capacitor 的 WebView 裡**不存在**可用的螢幕擷取 API，設定或權限都解決不了。
 
-   - **(a) 保留在 web 版，APK 版隱藏按鈕**（成本最低）。功能本身不刪，桌面瀏覽器照常可用，只有 Android App 上看不到這個鍵。
-   - **(b) 做原生螢幕分享**。要寫一個 Capacitor plugin 走 Android MediaProjection，加上前景服務（Android 14 起沒有前景服務會拋 SecurityException），再透過原生 LiveKit Android SDK 把畫面推進同一個 room——因為 WebView 裡的 JS SDK 拿不到 MediaProjection 的串流。這等於在 App 裡同時跑 JS 與原生兩套 LiveKit，架構複雜度與工時都是數量級的增加。
-   - **(c) 按鈕留著讓它失敗**。不建議，使用者會得到一個看起來能按但永遠壞掉的功能。
+   要做的只有一件事：在 [src/calls/call-ui.controller.ts](../src/calls/call-ui.controller.ts) 依執行環境隱藏或停用螢幕分享鍵。大約十行，且完全可逆。
 
-   在做出決定之前，[src/calls/call-ui.controller.ts](../src/calls/call-ui.controller.ts) 的 `toggleScreenShare` 不要動。
+   **不要改的部分**：[src/calls/providers/livekit-call-provider.ts](../src/calls/providers/livekit-call-provider.ts) 的 `setScreenShare`、以及 [functions/src/calls/livekit.ts](../functions/src/calls/livekit.ts) token 裡的 `SCREEN_SHARE` 與 `SCREEN_SHARE_AUDIO` 發布權限都要留著——web 版靠它們運作。
 5. **AndroidManifest 權限**。至少要宣告 `RECORD_AUDIO`、`CAMERA`、`MODIFY_AUDIO_SETTINGS`、`POST_NOTIFICATIONS`。注意 Android WebView 是兩層權限：OS 執行階段權限授予之後，WebView 還要在 `onPermissionRequest` 再放行一次，兩層都過才拿得到裝置。少了 `MODIFY_AUDIO_SETTINGS`，即使使用者已授權，音訊子系統仍可能拒絕把麥克風交給 WebView。
 
 ### 4.3 工具鏈需求（Capacitor 8）
@@ -200,9 +198,38 @@ Gradle 與 AGP 對 JDK 版本很挑，實務上用 Android Studio 內建的 JBR 
 
 另外，遺失 keystore 的後果在側載情境下比上架情境輕：使用者移除重裝即可，不會像 Play 那樣永久失去更新該 App 的能力。所以這裡真正要防的是**外洩**，不是遺失。
 
-### 6.3 還沒解決的一件事
+### 6.3 螢幕分享的決定與被否決的替代方案
 
-**螢幕分享要怎麼處理**（見 4.2 第 4 點）。這是唯一還沒拍板、且會影響工時估算的項目。在決定之前不要動通話相關的 client 程式碼。
+**決定：web 版保留，APK 版隱藏按鈕。這是「先擱著」，不是「放棄」。**
+
+web 版的螢幕分享已經是完成品而且零成本——`livekit-call-provider.ts` 的 `setScreenShareEnabled`、`call-ui.controller.ts` 的 `toggleScreenShare`、後端 token 已帶 `SCREEN_SHARE` 與 `SCREEN_SHARE_AUDIO` 權限、CSP 與 Permissions-Policy 也沒有擋（`display-capture` 未列於 Permissions-Policy，預設即 `self`）。桌面瀏覽器上，LiveKit 一開通就能用。
+
+APK 版隱藏按鈕是十行的改動，之後要解除也是十行。**這條路不會擋住未來做原生螢幕分享**，所以是可逆的擱置而非永久放棄。
+
+#### 如果之後要做原生，成本長這樣
+
+WebView 的 WebRTC 只接受它自己提供的來源（`getUserMedia` 的相機與麥克風）。MediaProjection 產出的畫面在 Kotlin 層，沒有任何 API 能把它交給 WebView 裡的 PeerConnection。所以不存在「寫個 plugin 拿到畫面再交給現有通話」這種做法，實際上要在同一個房間再開一條原生的 LiveKit 連線專推螢幕軌：
+
+1. 專案目前零原生程式碼，這會是第一個 Capacitor plugin。
+2. MediaProjection 同意流程加前景服務。Android 14 強制「先起前景服務、再要 projection」，順序反了就是 SecurityException；服務型別要宣告 `mediaProjection` 並帶常駐通知。
+3. `getLiveKitToken` 要改。現在簽的 identity 就是 Firebase uid，原生連線用同一個 identity 進同一個房間會被 LiveKit 當成重複身分踢掉，需要另簽 `${uid}_screen` 之類的身分，權限檢查要重驗。
+4. JS 與原生兩邊的狀態要同步（掛斷、切背景、通話被他人結束、App 被系統結束），否則會留下還在推畫面的幽靈參與者。
+5. web 端的 `call-stage` 目前假設一個參與者等於一個人，要處理多出來的螢幕分享參與者。
+6. 幾乎無法單元測試，需要真機並涵蓋 Android 13／14／15——前景服務規則每一版都動過。
+
+減輕負擔的一點：LiveKit Android SDK 的 `setScreenShareEnabled` 已經把 MediaProjection 包好了。加重負擔的一點：**沒有現成可用的 Capacitor LiveKit plugin**；成熟的行動端 SDK（Android、Flutter、React Native）共同點都是全程走原生 WebRTC，不經過 WebView。
+
+真的走到那一步時，還有一個選項值得一起評估：**整個通話層改用原生 LiveKit Android SDK**。螢幕分享是它的內建功能，總工時更大，但不會背上「兩套 SDK 長期互相同步」的債。
+
+#### 被否決：「web 不分享、只有 App 有」
+
+這個組合省不到任何成本，而且會倒賠：
+
+- 原生那六項一項都沒少。成本全部來自 App 端要能**發出**畫面，與 web 有沒有按鈕無關。
+- 看似能省的第 5 項也省不掉——web 使用者仍然會**收到** App 使用者分享的畫面，仍然要顯示。取消 web 的發送不影響接收，而工作量在接收端。
+- web 的螢幕分享是現成且免費的，刪掉等於主動丟棄一個零成本功能，換到零。
+
+如果日後有人再提這個方向，理由已經記在這裡，不必重新討論。
 
 ## 7. 這份文件沒有驗證的事
 
