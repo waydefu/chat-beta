@@ -1,0 +1,221 @@
+# 剩餘功能啟用 runbook
+
+Last updated: 2026-08-13 (Asia/Taipei)
+
+這份文件接在 [HANDOFF](HANDOFF.md) 之後。HANDOFF 記錄 3.0 rollout 完成後的 production 狀態，這份記錄「還沒開的功能要怎麼開」。接手的人請先讀 HANDOFF 的〈Provider integrations not yet production-ready〉，再讀這裡。
+
+規則不變：不要把任何 secret 值、user ID、production 房間名稱或訊息內容寫進這個 repo。
+
+## 0. 現況
+
+### 已上線的 Functions（asia-east1，Node.js 22，gen2）
+
+`createDirectRoom`、`createOrJoinPublicRoom`、`revokeRoomMember`、`syncMembershipMirror`、`reconcileMembershipMirrors`。
+
+以上是 production 唯一在跑的 Functions。**其餘 17 支雖然程式碼完整、測試通過、也在 client bundle 的呼叫路徑上，但從未部署過。**
+
+### 未部署的 Functions 與其依賴
+
+| Function | 需要的 secret | 解鎖的功能 |
+| --- | --- | --- |
+| `notifyOnMessage` | 無 | FCM 推播（新訊息通知） |
+| `sendStickerMessage` | 無 | 內建貼圖 |
+| `startLiveKitCall`／`getLiveKitToken`／`endLiveKitCall` | `LIVEKIT_URL`、`LIVEKIT_API_KEY`、`LIVEKIT_API_SECRET` | 語音／視訊通話、螢幕分享 |
+| `requestUpload`／`finalizeUpload`／`getAttachmentDownloadUrl`／`cleanupExpiredUploads`／`cleanupOrphanR2Objects` | `R2_ACCOUNT_ID`、`R2_ACCESS_KEY_ID`、`R2_SECRET_ACCESS_KEY`、`R2_BUCKET` | 檔案附件、語音訊息 |
+| `requestCustomStickerUpload`／`finalizeCustomStickerUpload`／`getCustomStickerDownloadUrl`／`deleteCustomSticker`／`cleanupExpiredCustomStickerUploads` | 同上 R2 | 自訂貼圖 |
+| `generateGeminiReply`／`cleanupExpiredAIDrafts` | `GEMINI_API_KEY`（cleanup 本身不需要） | AI 回覆與草稿 |
+| `searchMessages`／`syncMessageSearchIndex` | `ALGOLIA_APP_ID`、`ALGOLIA_ADMIN_KEY`、`ALGOLIA_INDEX_NAME` | 歷史訊息搜尋 |
+
+「需要的 secret」是逐一核對每支 Function 的 `secrets:` 宣告得到的，不是從功能名稱推測。要重新確認：
+
+```bash
+grep -rn "secrets:" functions/src
+```
+
+### Secret Manager 現況
+
+上表所有 secret 在 Secret Manager 都只有 `UNCONFIGURED` 佔位版本。那是當初為了通過 additive 部署提示而建立的，**不是有效憑證**。用佔位值部署 provider Functions 會部署成功但 runtime 必定失敗。
+
+### client 端現況
+
+所有功能的 UI 都已經在 bundle 裡，而且會走真實呼叫路徑。也就是說：**使用者現在按下這些按鈕，得到的是呼叫失敗，不是「功能未開放」的提示。** 這件事會影響啟用順序——每開一批，就少一組會壞的按鈕。
+
+## 1. 啟用順序
+
+| 批次 | 內容 | 外部依賴 | 前置 |
+| --- | --- | --- | --- |
+| A | 推播、內建貼圖 | 無 | 第 2 節 |
+| B | 通話（LiveKit） | LiveKit Cloud 帳號 | 批次 A 完成、CSP 修正 |
+| C | 附件、語音訊息、自訂貼圖 | Cloudflare R2 | 批次 B 完成、R2 CORS／lifecycle |
+| D | AI 回覆 | Gemini API key | Remote Config 釘模型版本 |
+| E | 歷史搜尋 | Algolia 帳號 | room-bound index、刪除同步驗證 |
+
+先做批次 A 的理由：它不需要任何第三方帳號，可以把「補部署角色 → 部署 Functions → 驗收」這條從未走過的路徑先跑通一次。第一次用 WIF service account 部署 Functions 幾乎一定會缺權限，讓它在最沒有外部依賴的批次上失敗，遠比在通話上線當天失敗好。
+
+## 2. 先決條件（所有批次共用，只做一次）
+
+### 2.1 repo 改動（已完成）
+
+原本 [.github/workflows/deploy-hosting.yml](../.github/workflows/deploy-hosting.yml) 只有 `feature_backend` 一個會部署 provider Functions 的階段，而它一次部署全部 22 支，包含 secret 還是佔位的那些。這讓「只開通話」在流程上不可能，而且 `providers_verified=true` 這個人為聲明也無法照實回答。
+
+現在多了兩個階段：
+
+| 階段 | 部署內容 | gate |
+| --- | --- | --- |
+| `notification_backend` | `notifyOnMessage`、`sendStickerMessage` | 只檢查 `migration_verified` |
+| `rtc_backend` | `startLiveKitCall`、`getLiveKitToken`、`endLiveKitCall` | `migration_verified` 與 `providers_verified` |
+
+`notification_backend` 不設 provider gate，因為那兩支沒有任何 secret 宣告。理由與 PR #13 把 `hosting_client` 的 gate 拿掉一樣：不要求一個無法照實回答的聲明。
+
+`rtc_backend` 的 `providers_verified` 是**範圍限定**的聲明，指的是 LiveKit 已就緒，不是全部 provider 都好了。`feature_backend` 保留原本的全機隊 gate 不變。
+
+### 2.2 補部署角色
+
+`github-deploy@f-chat-wayde-fu.iam.gserviceaccount.com` 目前只有 `firebasehosting.admin` 與 `serviceusage.serviceUsageConsumer`。先授予 [WIF-SETUP](WIF-SETUP.md) §6 的第二批（`firebaserules.admin`、`firebasedatabase.admin`、`cloudfunctions.developer`、`iam.serviceAccountUser`、`artifactregistry.writer`）。
+
+這一批一定不夠。gen2 Functions 實際部署還會要求下列其中幾項。**照 WIF-SETUP 的原則辦：讓它失敗、讀錯誤訊息指名的權限、只補那一項，不要預先全給。**
+
+| 角色 | 什麼時候會需要 |
+| --- | --- |
+| `roles/run.admin` | 所有 gen2 Functions（底層是 Cloud Run） |
+| `roles/eventarc.developer` | `notifyOnMessage`（Firestore trigger 走 Eventarc） |
+| `roles/cloudscheduler.admin` | 排程類 Functions（批次 C／D 才會用到） |
+| `roles/secretmanager.admin` | 批次 B 起。部署帶 `defineSecret` 的 Function 時，CLI 要幫 runtime service account 綁 `secretAccessor` |
+
+`secretmanager.admin` 給部署帳號的範圍偏大。替代做法是預先手動把 `roles/secretmanager.secretAccessor` 授給 Functions 的 runtime service account，部署帳號就只需要 `roles/secretmanager.viewer`。兩種都可以，選定後把決定寫回 WIF-SETUP。
+
+### 2.3 每次部署前的固定檢查
+
+沿用 HANDOFF〈Before any production mutation〉那份清單，一項都不要跳過。
+
+## 3. 批次 A：推播與內建貼圖
+
+### 3.1 為什麼推播現在沒作用
+
+VAPID key 已經在 GitHub production environment、Service Worker 在 [src/app/bootstrap.ts](../src/app/bootstrap.ts) 註冊、client 訂閱流程 [src/notifications/push.ts](../src/notifications/push.ts) 完整、Firestore rules 也允許使用者寫自己的 `users/{uid}/pushTokens`。**唯一缺的就是 `notifyOnMessage` 沒有部署，所以沒有任何東西會去送推播。** 這是目前投報率最高的一項。
+
+### 3.2 部署
+
+```bash
+gh workflow run "Deploy Firebase production" --repo waydefu/chat-beta -f rollout_phase=notification_backend -f migration_verified=true -f providers_verified=false
+```
+
+### 3.3 驗收
+
+1. `firebase functions:list --project f-chat-wayde-fu` 出現 `notifyOnMessage` 與 `sendStickerMessage`。
+2. A、B 兩個帳號同房。B 開啟推播，確認 Firestore `users/{B}/pushTokens` 出現一筆文件。
+3. B 把分頁切到背景，A 送一則訊息，B 應收到系統通知，點擊後開到該房間。
+4. B 把該房間設為靜音，A 再送一則，B 不應收到——`notifyOnMessage` 有讀 `roomStates/{roomId}.muted`。
+5. Cloud Logging 查 `notifyOnMessage`，確認沒有 `messaging/` 開頭的錯誤堆積。
+6. 送一張內建貼圖，訊息列正常顯示。
+
+### 3.4 回滾
+
+```bash
+firebase functions:delete notifyOnMessage --project f-chat-wayde-fu --region asia-east1
+```
+
+刪掉即可。這兩支沒有資料遷移，也不會留下需要清理的狀態。
+
+## 4. 批次 B：通話（LiveKit）
+
+### 4.1 程式碼不需要改
+
+三支 Functions 在 [functions/src/calls/livekit.ts](../functions/src/calls/livekit.ts)：token 已綁 uid、LiveKit room、publish source，TTL 寫死 10 分鐘。client 在 [src/calls/](../src/calls/)，`livekit-client` 是動態 import，不進首屏 chunk。Firestore rules 的 `rooms/{roomId}/calls/{callId}` 已是成員可讀、只有 Functions 能寫。這批要動的只有設定與部署。
+
+### 4.2 建立 LiveKit Cloud 專案
+
+1. 到 <https://cloud.livekit.io> 建立專案，region 選離 `asia-east1` 最近的。
+2. 在 Settings → Keys 產生 API key／secret，記下專案 URL（形如 `wss://<subdomain>.livekit.cloud`）。
+3. 不需要在 LiveKit 端調 token TTL，程式碼已經寫死 10 分鐘。
+
+### 4.3 寫入 Secret Manager
+
+三個 secret 各跑一次，值用貼的，不要寫進任何檔案或留在 shell 歷史：
+
+```bash
+firebase functions:secrets:set LIVEKIT_URL --project f-chat-wayde-fu
+```
+
+`LIVEKIT_API_KEY`、`LIVEKIT_API_SECRET` 同樣做法。三個都設好之後，先確認哪一版是佔位值：
+
+```bash
+firebase functions:secrets:access LIVEKIT_URL@1 --project f-chat-wayde-fu
+```
+
+確認後再停用該版本，不要憑編號猜：
+
+```bash
+firebase functions:secrets:destroy LIVEKIT_URL@1 --project f-chat-wayde-fu
+```
+
+### 4.4 CSP（repo 已修，但要部署才生效）
+
+[firebase.json](../firebase.json) 的 `connect-src` 原本只有 `wss://*.livekit.cloud`，缺 `https://*.livekit.cloud`，現已補上。**但 CSP 是 Hosting 標頭，要跑一次 `hosting_client` 階段部署才會對使用者生效，這件事要在 `rtc_backend` 之前做完。**
+
+原因：`livekit-client` 連到 `.livekit.cloud` 網域時，會先對 `https://<host>/settings/regions` 發一個 `fetch` 做區域探索。SDK 裡的 `getCloudConfigUrl()` 把 URL 的 `wss:` 換成 `https:`。LiveKit 官方防火牆需求也是列 `*.livekit.cloud` TCP 443，涵蓋 https 與 wss。
+
+影響程度要說清楚，免得接手的人判斷錯優先序：這個 fetch 失敗在 SDK 裡有 `.catch` 接住、只會 `log.warn`，**所以第一次連線仍然會成功**。代價是區域備援（region failover）完全失效，且 console 會持續噴 CSP 錯誤。這不是「通話打不開」等級的問題，但必修，而且要在通話上線前修，否則之後每一次連線品質問題都會多一個變因。
+
+WebRTC 的媒體連線（ICE／TURN／UDP）不受 CSP 管轄，所以 `*.turn.livekit.cloud` 不需要寫進 CSP。
+
+CSP 改動走 `hosting_client` 階段部署。HTML 現在是 `Cache-Control: no-cache`（PR #8），標頭改動下一次請求就生效，不必等一小時；驗收時仍建議開無痕視窗，避免 Service Worker 或既有分頁干擾判斷。
+
+### 4.5 部署
+
+```bash
+gh workflow run "Deploy Firebase production" --repo waydefu/chat-beta -f rollout_phase=rtc_backend -f migration_verified=true -f providers_verified=true
+```
+
+`providers_verified=true` 在這個階段的意思是「LiveKit 的憑證已設定並在 staging 驗過」，不是「全部 provider 都好了」。這就是拆階段的用意，照實回答即可。
+
+### 4.6 驗收
+
+用兩個真實帳號測，不要只有自己一個帳號開兩個分頁：
+
+1. A、B 同房，A 按 ☎。
+2. A 看到「語音通話已開始」的 toast，兩邊訊息列都出現「開始了一通電話」的系統訊息。
+3. B 點該系統訊息加入，雙向可通話。
+4. DevTools Console 沒有任何 CSP 違規。
+5. Network 面板確認 `getLiveKitToken` 回傳 `expiresIn: 600`。
+6. A 按 ■ 結束，Firestore `rooms/{roomId}/calls/{callId}.status` 變 `ended`。
+7. 非發起者且非 owner／admin 的成員呼叫結束，應得到 `permission-denied`。
+8. 視訊（▣）與螢幕分享各測一次。
+9. 通話結束後，DOM 不應殘留 `[data-chat-lite-call-audio]` 或 `.call-stage`。
+
+### 4.7 上線前的非技術前置
+
+**隱私說明與服務條款必須先更新。** 通話會把使用者的音訊與視訊送到 LiveKit Cloud 這個第三方處理者，這是 HANDOFF〈Immediate follow-up〉第 8 點。在 [privacy.html](../privacy.html) 揭露之前，不要對真實使用者開放通話。
+
+### 4.8 App Check
+
+`APP_CHECK_ENFORCED_FEATURES` 目前是空字串，代表 `rtc` 沒有強制。client 呼叫時已帶 `limitedUseAppCheckTokens: true`，token 有在送、metrics 收得到。等 metrics 顯示合法流量穩定之後再把 `rtc` 加進去，一次只加一個 surface。
+
+### 4.9 回滾
+
+```bash
+firebase functions:delete startLiveKitCall getLiveKitToken endLiveKitCall --project f-chat-wayde-fu --region asia-east1
+```
+
+已結束的通話會在 Firestore 留下 `calls` 文件與 `kind: 'call'` 的系統訊息。那些是歷史紀錄，不要刪。
+
+## 5. 批次 C／D／E
+
+共同前置與批次 B 相同（角色、workflow 階段、部署前檢查）。各自的 gate 沿用 HANDOFF〈Required provider gates〉：
+
+- **批次 C（R2）**：除了四個 secret，還要先設定 bucket CORS、lifecycle rule、配額，並確認 orphan cleanup 能正確刪除未 finalize 的物件。這批會啟用兩支排程 Function，部署帳號屆時需要 Cloud Scheduler 權限。
+- **批次 D（Gemini）**：`GEMINI_API_KEY` 之外，要透過 Remote Config 釘住一個穩定的模型版本並確認用量與速率限制。`cleanupExpiredAIDrafts` 跟這批一起出——它清的是 AI 草稿，Gemini 沒開之前部署它沒有意義。
+- **批次 E（Algolia）**：index 必須是 room-bound，且要驗證訊息刪除會同步刪除索引，否則等同把已刪訊息留在第三方可搜尋。
+
+每一批都要在受保護 staging 做完 smoke test 才動 production，並且更新 privacy／terms。
+
+## 6. 不要做的事
+
+- 不要用 `feature_backend` 階段來開單一功能。那個階段是 22 支一起出，只有全部 provider 都就緒時才該用。
+- 不要為了讓部署過關而把 `providers_verified` 填成不實的值。這兩個 input 是人為聲明，唯一的價值就是誠實。
+- 不要在還沒補齊角色前，改用個人帳號從本機或 Cloud Shell 手動部署 Functions。那會讓 production 的實際狀態與 workflow 記錄脫節，正是 WIF 當初要解決的問題。
+- 不要把 secret 值貼進 commit message、PR 描述、issue 或這個 repo 的任何檔案。
+
+## 7. 交接時要更新的地方
+
+每完成一個批次，更新 [HANDOFF](HANDOFF.md) 的〈Provider integrations not yet production-ready〉與〈Immediate follow-up〉，並把該批次的 Functions 從這份文件第 0 節的「未部署」表移到「已上線」。

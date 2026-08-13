@@ -142,7 +142,7 @@ Until those gates pass, Gemini generation, R2 uploads, LiveKit calls, and Algoli
 1. Run authenticated smoke tests with all three existing accounts: room discovery, join, send/read/unread, multi-tab presence, typing, offline text queue, and member removal.
 2. Observe Functions errors, Rules denials, App Check metrics, Firestore writes, RTDB mirror drift, and billing for at least 24 hours after rollout.
 3. Grant the remaining deploy roles when a phase beyond `hosting_client` is first run. WIF itself is done; the service account is deliberately scoped to hosting only.
-4. Replace and stage-test provider credentials, then deploy only the explicitly listed feature Functions.
+4. Replace and stage-test provider credentials, then deploy only the explicitly listed feature Functions. The batch order, per-batch gates, and the two repository changes this requires are recorded in [FEATURE-ENABLEMENT](FEATURE-ENABLEMENT.md).
 5. Enable App Check enforcement one surface at a time after legitimate traffic is visible in metrics.
 6. Perform the rollback restore drill using a paired Firestore/RTDB backup in an isolated project.
 7. Remove legacy fields, legacy RTDB paths, compatibility branches, and explicitly inventoried legacy Functions only after the seven-day observation gate. For this rollout, the earliest planned cleanup date is 2026-08-19, and only if monitoring is clean.
