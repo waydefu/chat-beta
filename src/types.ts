@@ -111,6 +111,14 @@ export interface RoomMembership {
   updatedAt?: TimestampLike | null;
 }
 
+/** A call the server still considers live. Ended calls are not mirrored here. */
+export interface RoomCall {
+  callId: string;
+  kind: 'voice' | 'video';
+  status: 'active' | 'ended';
+  startedBy: string;
+}
+
 export interface RoomReadState {
   membershipStatus?: MembershipStatus;
   role?: RoomRole;

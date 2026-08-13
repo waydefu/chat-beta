@@ -10,6 +10,7 @@ import {
   sendTextMessage,
   setReaction,
   softDeleteMessage,
+  watchActiveCalls,
   watchReadStates,
   watchReactions,
   watchRecentMessages,
@@ -25,6 +26,7 @@ import type {
   Mention,
   OnlineUser,
   Reaction,
+  RoomCall,
   RoomMembership,
   RoomPreview,
   RoomReadState,
@@ -119,6 +121,7 @@ let roomStates = new Map<string, RoomReadState>();
 let messages = new Map<string, ChatMessage>();
 let members: RoomMembership[] = [];
 let readStates = new Map<string, RoomReadState>();
+let activeCalls = new Map<string, RoomCall>();
 let reactions: Reaction[] = [];
 let onlineUsers: OnlineUser[] = [];
 let oldest: MessagePage['oldest'] = null;
@@ -316,6 +319,10 @@ async function openRoom(nextRoomId: string): Promise<void> {
     members = value;
     updateMentionList();
   }, handleRoomAccessError));
+  scope.add(watchActiveCalls(roomId, (value) => {
+    activeCalls = value;
+    renderMessages(false);
+  }, handleRoomAccessError));
   scope.add(watchReadStates(roomId, (value) => {
     readStates = value;
     renderMessages(false);
@@ -466,6 +473,7 @@ function renderMessage(message: ChatMessage): HTMLElement {
     void import('../stickers/sticker.view').then(({ renderSticker }) => renderSticker(content, message));
   } else if (message.kind === 'call') {
     content.textContent = `${message.senderDisplayName} ${textOf(message)}`;
+    content.classList.add('call-message');
   } else {
     void import('../media/attachment.view').then(({ renderAttachmentContent }) => renderAttachmentContent(content, message));
   }
@@ -486,14 +494,41 @@ function renderMessage(message: ChatMessage): HTMLElement {
     read.textContent = count ? `${count} 人已讀` : '';
     meta.append(read);
   }
-  bubble.append(content, meta);
+  bubble.append(content);
+  if (message.kind === 'call' && message.event === 'started') bubble.append(renderCallInvite(message));
+  bubble.append(meta);
   wrap.append(bubble, renderReactionBar(message));
-  if (message.kind === 'call' && message.event === 'started' && !callController?.active) {
-    wrap.append(actionButton('加入通話', () => void joinCall(message)));
-  }
   if (message.senderType === 'user' && !message.deletedAt) wrap.append(renderMessageActions(message, own));
   row.append(profile, wrap);
   return row;
+}
+
+/**
+ * A call invitation is only actionable while the call is live, and the server
+ * never writes a second message when it ends - the calls collection is the only
+ * signal. Without this the bubble kept offering to join a call that finished
+ * hours ago.
+ */
+function renderCallInvite(message: CallMessage): HTMLElement {
+  const call = activeCalls.get(message.callId);
+  if (!call) {
+    const ended = document.createElement('p');
+    ended.className = 'call-ended';
+    ended.textContent = '通話已結束';
+    return ended;
+  }
+  if (callController?.active) {
+    const busy = document.createElement('p');
+    busy.className = 'call-ended';
+    busy.textContent = '通話進行中';
+    return busy;
+  }
+  const join = document.createElement('button');
+  join.type = 'button';
+  join.className = 'call-join';
+  join.textContent = call.kind === 'video' ? '加入視訊通話' : '加入語音通話';
+  join.addEventListener('click', () => void joinCall(message.roomId, call));
+  return join;
 }
 
 function renderMessageActions(message: ChatMessage, own: boolean): HTMLElement {
@@ -847,26 +882,10 @@ async function beginCall(kind: 'voice' | 'video'): Promise<void> {
   }
 }
 
-async function joinCall(message: CallMessage): Promise<void> {
-  if (message.roomId !== roomId) return;
+async function joinCall(messageRoomId: string, call: RoomCall): Promise<void> {
+  if (messageRoomId !== roomId) return;
   try {
-    await (await getCallController()).join(message);
-  } catch (error) {
-    toast(errorText(error), 'error');
-  }
-}
-
-async function toggleScreenShare(): Promise<void> {
-  try {
-    await callController?.toggleScreenShare();
-  } catch (error) {
-    toast(errorText(error), 'error');
-  }
-}
-
-async function finishCall(): Promise<void> {
-  try {
-    await callController?.finish();
+    await (await getCallController()).join({ roomId, callId: call.callId, kind: call.kind });
   } catch (error) {
     toast(errorText(error), 'error');
   }
@@ -1031,8 +1050,10 @@ function bindEvents(): void {
       .then(({ sendBuiltInSticker }) => sendBuiltInSticker(roomId, button.dataset.sticker!))
       .catch((error) => toast(errorText(error), 'error'));
   });
-  ui.voiceCall.addEventListener('click', () => void (callController?.active ? finishCall() : beginCall('voice')));
-  ui.videoCall.addEventListener('click', () => void (callController?.active ? toggleScreenShare() : beginCall('video')));
+  // The header only starts calls. Muting, sharing and hanging up live on the
+  // call panel, where they are labelled and cannot be confused with each other.
+  ui.voiceCall.addEventListener('click', () => void beginCall('voice'));
+  ui.videoCall.addEventListener('click', () => void beginCall('video'));
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden) {
       const newest = [...messages.values()].sort(compareMessages).at(-1);

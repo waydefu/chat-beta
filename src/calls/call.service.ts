@@ -1,22 +1,30 @@
 import { callFunction } from '../firebase/callables';
-import type { CallProvider, CallSession } from './providers/call-provider';
+import type { CallParticipant, CallProvider, CallSession } from './providers/call-provider';
+
+export interface StartCallRequest {
+  roomId: string;
+  kind: 'voice' | 'video';
+  stage: HTMLElement;
+  onParticipants(participants: CallParticipant[]): void;
+}
 
 export async function startCall(
   provider: CallProvider,
-  roomId: string,
-  kind: 'voice' | 'video',
+  request: StartCallRequest,
   signal: AbortSignal,
 ): Promise<{ callId: string; session: CallSession }> {
   const response = await callFunction<{ roomId: string; kind: string }, { callId: string }>(
     'startLiveKitCall',
-    { roomId, kind },
+    { roomId: request.roomId, kind: request.kind },
     { limitedUseAppCheckTokens: true },
   );
   const session = await provider.join({
-    roomId,
+    roomId: request.roomId,
     callId: response.callId,
     audio: true,
-    video: kind === 'video',
+    video: request.kind === 'video',
+    stage: request.stage,
+    onParticipants: request.onParticipants,
   }, signal);
   return { callId: response.callId, session };
 }
