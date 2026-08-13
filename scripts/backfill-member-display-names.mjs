@@ -20,10 +20,15 @@
  *
  * Never commit this script's output: it contains user ids and display names.
  */
+import { createRequire } from 'node:module';
+import { join } from 'node:path';
 import process from 'node:process';
 
-import { cert, initializeApp, applicationDefault } from 'firebase-admin/app';
-import { FieldValue, getFirestore } from 'firebase-admin/firestore';
+// firebase-admin belongs to the functions workspace, not the root package, so
+// resolve it from there instead of assuming pnpm hoisted it to the root.
+const requireFromFunctions = createRequire(join(import.meta.dirname, '../functions/package.json'));
+const { applicationDefault, cert, initializeApp } = requireFromFunctions('firebase-admin/app');
+const { FieldValue, getFirestore } = requireFromFunctions('firebase-admin/firestore');
 
 const args = process.argv.slice(2);
 const apply = args.includes('--apply');

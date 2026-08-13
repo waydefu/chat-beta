@@ -71,15 +71,30 @@ for role in roles/firebasehosting.admin roles/serviceusage.serviceUsageConsumer;
 done
 ```
 
-要部署 Rules、RTDB 或 Functions 時再加：
+要部署 Rules、RTDB 或 Functions 時再加。以下這份清單是 2026-08-13 第一次用 workflow 部署 Functions 時實際跑出來的結果，不是推測：
 
 ```bash
-for role in roles/firebaserules.admin roles/firebasedatabase.admin roles/cloudfunctions.developer roles/iam.serviceAccountUser roles/artifactregistry.writer; do
+for role in roles/firebaserules.admin roles/firebasedatabase.admin roles/cloudfunctions.developer roles/iam.serviceAccountUser roles/artifactregistry.writer roles/run.admin roles/eventarc.developer roles/secretmanager.admin roles/firebaseextensions.viewer roles/datastore.viewer roles/cloudscheduler.admin; do
   gcloud projects add-iam-policy-binding f-chat-wayde-fu \
     --member="serviceAccount:github-deploy@f-chat-wayde-fu.iam.gserviceaccount.com" \
     --role="$role" --condition=None >/dev/null
 done
 ```
+
+後六個當初都不在清單上，是靠讓部署失敗、讀錯誤訊息一個一個補出來的：
+
+| 角色 | 為什麼需要 |
+| --- | --- |
+| `run.admin` | gen2 Functions 底層是 Cloud Run |
+| `eventarc.developer` | Firestore 觸發器走 Eventarc |
+| `secretmanager.admin` | 部署帶 `defineSecret` 的 Function 時，CLI 要幫 runtime service account 綁 `secretAccessor` |
+| `firebaseextensions.viewer` | CLI 在任何 Functions 部署都會列舉 Extensions 實例 |
+| `datastore.viewer` | Firestore 觸發器需要讀資料庫 metadata |
+| `cloudscheduler.admin` | 排程 Function 的更新。`additive_backend` 就會踩到，因為 `reconcileMembershipMirrors` 是每 15 分鐘執行的排程 |
+
+`secretmanager.admin` 的範圍偏大。較窄的替代方案是預先把 `roles/secretmanager.secretAccessor` 授給 Functions 的 runtime service account，部署帳號降為 `roles/secretmanager.viewer`。目前採用的是前者。
+
+這份清單到 `additive_backend`、`notification_backend`、`rtc_backend`、`hosting_client` 四個階段為止都夠用。批次 C／D 的排程 Function 尚未部署過，可能還會再冒出新的權限——同樣的處理方式：讓它失敗、讀錯誤、補那一項、把結果寫回這張表。
 
 這份角色清單是起點而非定論。Functions 部署常會再要求額外權限，正確做法是讓部署失敗、讀錯誤訊息指名的權限再補，而不是預先大範圍授權。
 
