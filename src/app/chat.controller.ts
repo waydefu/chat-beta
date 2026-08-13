@@ -401,7 +401,29 @@ function messageReadCount(messageId: string): number {
   }).length;
 }
 
+/** Treat this much slack above the end as "still following the conversation". */
+const FOLLOW_THRESHOLD_PX = 80;
+
+/** Set when this client sends, so its own message wins over the follow check. */
+let scrollAfterNextRender = false;
+
+function atBottom(): boolean {
+  const list = ui.messageList;
+  return list.scrollHeight - list.scrollTop - list.clientHeight <= FOLLOW_THRESHOLD_PX;
+}
+
+/**
+ * Every update rebuilds the whole list, and read receipts alone make that happen
+ * constantly. Emptying the container collapses scrollHeight, so the browser clamps
+ * scrollTop and the view jumps unless the position is captured first and restored.
+ * `scroll` forces the end - use it when this client caused the new content and
+ * should see it regardless of where it was looking.
+ */
 function renderMessages(scroll = false): void {
+  const list = ui.messageList;
+  const follow = scroll || scrollAfterNextRender || atBottom();
+  scrollAfterNextRender = false;
+  const previousTop = list.scrollTop;
   const query = ui.searchInput.value.trim().toLocaleLowerCase('zh-Hant');
   const fragment = document.createDocumentFragment();
   for (const message of [...messages.values()].sort(compareMessages)) {
@@ -410,8 +432,8 @@ function renderMessages(scroll = false): void {
     row.classList.toggle('filtered-out', !matches);
     fragment.append(row);
   }
-  ui.messageList.replaceChildren(fragment);
-  if (scroll) ui.messageList.scrollTop = ui.messageList.scrollHeight;
+  list.replaceChildren(fragment);
+  list.scrollTo({ top: follow ? list.scrollHeight : previousTop, behavior: 'instant' });
 }
 
 function renderMessage(message: ChatMessage): HTMLElement {
@@ -586,6 +608,7 @@ async function submitMessage(): Promise<void> {
       mentions,
       ...(replyToId ? { replyToId } : {}),
     });
+    scrollAfterNextRender = true;
     ui.input.value = '';
     cancelReply();
     updateComposer();
