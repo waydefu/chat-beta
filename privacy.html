@@ -12,8 +12,9 @@
     <h1>隱私說明</h1><small>最後更新：2026 年 8 月 13 日</small>
     <p>Chat Lite 會處理 Google 顯示名稱、電子郵件、Firebase 使用者 ID、房間 membership、訊息、附件 metadata、已讀狀態，以及短生命週期的 presence、typing、通話與 AI 生成狀態。</p>
     <h2>可見範圍</h2><p>登入者可看見 public room 名稱；只有 active member 能讀內容。Firestore membership 是授權來源。訊息軟刪除後可能保留最小稽核 metadata。</p>
-    <h2>第三方處理者</h2><p>目前實際運作中：Firebase 提供登入、永久資料、即時狀態、Functions、推播與 Hosting；LiveKit Cloud 傳輸語音與視訊通話媒體。</p>
-    <p>下列整合已寫入程式碼但尚未啟用，未啟用期間不會有任何資料送出：Gemini 處理被提及時送出的必要聊天 context；Cloudflare R2 保存媒體；Algolia 索引房間內的文字訊息。附件內容與私人 AI prompt 不送到 Algolia。啟用前本說明會先更新。</p>
+    <h2>第三方處理者</h2><p>目前實際運作中：Firebase 提供登入、永久資料、即時狀態、Functions、推播與 Hosting；LiveKit Cloud 傳輸語音與視訊通話媒體；Google Gemini 在被提及時處理送出的聊天內容。</p>
+    <p>下列整合已寫入程式碼但尚未啟用，未啟用期間不會有任何資料送出：Cloudflare R2 保存媒體；Algolia 索引房間內的文字訊息。附件內容與私人 AI prompt 不送到 Algolia。啟用前本說明會先更新。</p>
+    <h2>AI 回覆</h2><p>只有在訊息中明確提及 <strong>@Gemini</strong> 時才會觸發 AI，單純提到「Gemini」這個詞不會。觸發時，該聊天室最近的對話內容會連同你的訊息送往 Google 的 Gemini API 產生回覆——預設為最近 20 則，回覆某則訊息時會另外帶上該則及其鄰近訊息，並以 24,000 個 token 為上限裁切。<strong>只有你明確提及 AI 的那一則訊息會觸發傳送，平常的聊天不會送往 Google。</strong>其他聊天室的內容、附件檔案本身、以及未觸發 AI 的訊息都不會送出。產生中的草稿最遲十分鐘清除，完整的 prompt 內容不寫入我們的日誌。</p>
     <h2>通話</h2><p>發起或加入通話時，你的麥克風音訊、視訊與螢幕分享畫面會即時傳輸至 LiveKit Cloud 的伺服器並轉送給同一通話的其他成員。<strong>通話內容不錄製、不保存。</strong>Firestore 只留下通話的生命週期紀錄，也就是由誰發起、屬於哪個房間、開始與結束時間；參與者狀態、音訊軌與網路品質資訊不寫入我們的資料庫。加入通話用的憑證有效期為十分鐘，並綁定你的使用者 ID 與該次通話。</p>
     <h2>推播通知</h2><p>啟用推播後，瀏覽器產生的推播權杖會存在你的使用者資料下，並在有新訊息時透過 Firebase Cloud Messaging 送出通知，內容包含寄件者名稱、房間與訊息開頭的節錄。你可以隨時在設定中關閉推播，或將個別房間靜音。</p>
     <h2>保存與裝置資料</h2><p>AI draft 最遲十分鐘清除；未完成 upload 於 24 小時清理，orphan object 七天後清理。永久訊息與 ready attachment 依房間保存政策保留。只有啟用「可信裝置離線資料」後，瀏覽器才保留 Firestore cache。</p>
