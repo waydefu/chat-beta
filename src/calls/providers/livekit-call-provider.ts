@@ -15,13 +15,17 @@ export class LiveKitCallProvider implements CallProvider {
     );
     const { Room, RoomEvent, Track } = await import('livekit-client');
     const room = new Room({ adaptiveStream: true, dynacast: true });
-    const stage = document.createElement('aside');
-    stage.className = 'call-stage';
-    stage.dataset.chatLiteCallStage = 'true';
-    stage.setAttribute('aria-label', '通話影像');
-    document.body.append(stage);
+    const stage = options.stage;
     const disconnect = (): void => { void room.disconnect(); };
     signal.addEventListener('abort', disconnect, { once: true });
+
+    const reportParticipants = (): void => {
+      options.onParticipants([...room.remoteParticipants.values()].map((participant) => ({
+        identity: participant.identity,
+        name: participant.name || participant.identity,
+      })));
+    };
+
     await room.connect(grant.url, grant.token);
     room.on(RoomEvent.TrackSubscribed, (track) => {
       if (track.kind === Track.Kind.Audio) {
@@ -38,6 +42,8 @@ export class LiveKitCallProvider implements CallProvider {
       }
     });
     room.on(RoomEvent.TrackUnsubscribed, (track) => track.detach().forEach((element) => element.remove()));
+    room.on(RoomEvent.ParticipantConnected, reportParticipants);
+    room.on(RoomEvent.ParticipantDisconnected, reportParticipants);
     await room.localParticipant.setMicrophoneEnabled(options.audio);
     await room.localParticipant.setCameraEnabled(options.video);
     for (const publication of room.localParticipant.videoTrackPublications.values()) {
@@ -49,12 +55,14 @@ export class LiveKitCallProvider implements CallProvider {
       (element as HTMLVideoElement).playsInline = true;
       stage.append(element);
     }
+    // Anyone already in the room raises no ParticipantConnected for this client,
+    // so report once the connection settles rather than waiting for a change.
+    reportParticipants();
     room.once(RoomEvent.Disconnected, () => signal.removeEventListener('abort', disconnect));
     return {
       async leave() {
         await room.disconnect();
         document.querySelectorAll('[data-chat-lite-call-audio]').forEach((element) => element.remove());
-        stage.remove();
       },
       async setMicrophone(enabled) { await room.localParticipant.setMicrophoneEnabled(enabled); },
       async setCamera(enabled) { await room.localParticipant.setCameraEnabled(enabled); },

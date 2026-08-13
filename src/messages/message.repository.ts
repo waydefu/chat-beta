@@ -17,7 +17,7 @@ import {
 } from 'firebase/firestore';
 
 import { firestore } from '../firebase/firestore-client';
-import type { Attachment, ChatMessage, Mention, Reaction, RoomMembership, RoomReadState } from '../types';
+import type { Attachment, ChatMessage, Mention, Reaction, RoomCall, RoomMembership, RoomReadState } from '../types';
 
 export const MESSAGE_PAGE_SIZE = 50;
 
@@ -132,6 +132,22 @@ export function watchRoomMembers(
   return onSnapshot(collection(firestore, 'rooms', roomId, 'members'), (snapshot) => {
     next(snapshot.docs.map((member) => member.data() as RoomMembership).filter((member) => member.status === 'active'));
   }, error);
+}
+
+/**
+ * Only live calls. A call that has ended simply leaves the map, which is how the
+ * message list knows to stop offering "join" on an old invitation.
+ */
+export function watchActiveCalls(
+  roomId: string,
+  next: (calls: Map<string, RoomCall>) => void,
+  error: (cause: Error) => void,
+): Unsubscribe {
+  return onSnapshot(
+    query(collection(firestore, 'rooms', roomId, 'calls'), where('status', '==', 'active')),
+    (snapshot) => next(new Map(snapshot.docs.map((call) => [call.id, call.data() as RoomCall]))),
+    error,
+  );
 }
 
 export function watchReactions(
