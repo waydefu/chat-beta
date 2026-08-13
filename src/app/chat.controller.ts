@@ -401,16 +401,8 @@ function messageReadCount(messageId: string): number {
   }).length;
 }
 
-/** Treat this much slack above the end as "still following the conversation". */
-const FOLLOW_THRESHOLD_PX = 80;
-
 /** Set when this client sends, so its own message wins over the follow check. */
 let scrollAfterNextRender = false;
-
-function atBottom(): boolean {
-  const list = ui.messageList;
-  return list.scrollHeight - list.scrollTop - list.clientHeight <= FOLLOW_THRESHOLD_PX;
-}
 
 /**
  * Every update rebuilds the whole list, and read receipts alone make that happen
@@ -421,9 +413,11 @@ function atBottom(): boolean {
  */
 function renderMessages(scroll = false): void {
   const list = ui.messageList;
-  const follow = scroll || scrollAfterNextRender || atBottom();
-  scrollAfterNextRender = false;
   const previousTop = list.scrollTop;
+  // 80px of slack still counts as reading the end.
+  const follow = scroll || scrollAfterNextRender
+    || list.scrollHeight - previousTop - list.clientHeight <= 80;
+  scrollAfterNextRender = false;
   const query = ui.searchInput.value.trim().toLocaleLowerCase('zh-Hant');
   const fragment = document.createDocumentFragment();
   for (const message of [...messages.values()].sort(compareMessages)) {

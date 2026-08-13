@@ -58,11 +58,27 @@ Do not commit the production room name, user IDs, message contents, or raw migra
 
 The following Node.js 22, second-generation Functions are live in `asia-east1`:
 
+Membership (deployed 2026-08-12):
+
 - `createDirectRoom`
 - `createOrJoinPublicRoom`
 - `revokeRoomMember`
 - `syncMembershipMirror`
 - `reconcileMembershipMirrors`
+
+Notifications and stickers (deployed 2026-08-13, `notification_backend` phase):
+
+- `notifyOnMessage`
+- `sendStickerMessage`
+
+Calls (deployed 2026-08-13, `rtc_backend` phase):
+
+- `startLiveKitCall`
+- `getLiveKitToken`
+- `endLiveKitCall`
+
+Everything else in `functions/src/index.ts` remains undeployed. The enablement
+order and per-batch gates are in [FEATURE-ENABLEMENT](FEATURE-ENABLEMENT.md).
 
 `syncMembershipMirror` is retryable and idempotent. `reconcileMembershipMirrors` runs every 15 minutes. Firestore membership is canonical; the RTDB mirror remains an eventually consistent derivative. Revocation stays fail-closed through the `revoking` state and operation journal.
 
@@ -76,7 +92,8 @@ The following Node.js 22, second-generation Functions are live in `asia-east1`:
 - `Cross-Origin-Opener-Policy` is `same-origin-allow-popups` so the `signInWithPopup` window handle survives popup cancellation polling.
 - HTML is served with `Cache-Control: no-cache`, verified live on `/`, `/privacy.html` and `/terms.html`; hashed assets keep `public,max-age=31536000,immutable`. This means header and CSP changes reach returning browsers on the next request. Before this, HTML inherited the Hosting default `max-age=3600` and a cached document kept enforcing the previous CSP for up to an hour after a headers-only deploy.
 - Production source maps are built for diagnostics but excluded from Hosting uploads.
-- Core signed-in JavaScript is `199.80 kB` gzip under the production configuration.
+- Core signed-in JavaScript is roughly `200 kB` gzip under the production configuration, of which the Firebase SDK is `187.43 kB`. The application's own code is `10.40 kB` and the entry chunk `2.09 kB`.
+- The budget gate was raised from 200 kB to 210 kB on 2026-08-13. At 200 kB the headroom above Firebase was 12 kB and 99.9% consumed, so the gate had stopped catching bloat and started failing on bug fixes; the message list scroll fix (PR #17) tripped it by 70 bytes. The `forbidden` provider-chunk check in the same script is unchanged and remains the meaningful guard. Reclaiming real space means reducing what the Firebase SDK pulls into the core path, which is a separate piece of work.
 - Google Sign-In startup was browser-smoked after the CSP fix: no CSP console error, no `auth/internal-error`, and the Auth iframe was created.
 
 ### GitHub delivery record
@@ -106,25 +123,38 @@ Do not place these values in Markdown even though browser Firebase configuration
 
 GitHub Workload Identity Federation is configured and proven. The pool `github`, its OIDC provider, and the `github-deploy` service account exist in `f-chat-wayde-fu`; the provider carries an attribute condition restricting it to `waydefu/chat-beta`, and no service account key was created. `GCP_WORKLOAD_IDENTITY_PROVIDER` and `GCP_DEPLOY_SERVICE_ACCOUNT` are set on the `production` environment. The setup commands are recorded in [WIF-SETUP](WIF-SETUP.md).
 
-The first workflow deploy replaced the manual Cloud Shell rollout on 2026-08-12: `hosting_client` phase, run 31600675047, which passed `pnpm check` and `pnpm test:rules` before deploying. The service account holds only `firebasehosting.admin` and `serviceUsageConsumer`; the Rules, RTDB and Functions roles are still to be granted when those phases are first deployed.
+The first workflow deploy replaced the manual Cloud Shell rollout on 2026-08-12: `hosting_client` phase, run 31600675047, which passed `pnpm check` and `pnpm test:rules` before deploying.
+
+The deploy roles were granted on 2026-08-13 for the first Functions deploy. `github-deploy` now holds eleven roles. Two of them are not in the [WIF-SETUP](WIF-SETUP.md) list and were only discovered by letting the deploy fail:
+
+- `roles/firebaseextensions.viewer` — the CLI enumerates Extensions instances during any Functions deploy
+- `roles/datastore.viewer` — Firestore triggers need to read the database metadata
+
+The others are `firebasehosting.admin`, `serviceusage.serviceUsageConsumer`, `firebaserules.admin`, `firebasedatabase.admin`, `cloudfunctions.developer`, `iam.serviceAccountUser`, `artifactregistry.writer`, `run.admin`, `eventarc.developer` and `secretmanager.admin`. `secretmanager.admin` is broader than ideal; the narrower alternative is to pre-grant `secretAccessor` to the Functions runtime service account and drop the deploy account to `secretmanager.viewer`.
 
 ## Provider integrations not yet production-ready
 
 The repository contains implementation boundaries for Gemini, R2, LiveKit, and Algolia, but their feature backends were intentionally not deployed with placeholder credentials.
 
-Secret Manager currently contains `UNCONFIGURED` placeholder versions created only to pass additive deployment prompts. They are not valid credentials. Do not deploy provider Functions until each value is replaced and verified in protected staging:
+LiveKit was configured on 2026-08-13 and calls are live. The remaining secrets
+still contain `UNCONFIGURED` placeholder versions created only to pass additive
+deployment prompts. They are not valid credentials. Do not deploy the Functions
+that depend on them until each value is replaced and verified in protected
+staging:
 
 - `GEMINI_API_KEY`
 - `R2_ACCOUNT_ID`
 - `R2_ACCESS_KEY_ID`
 - `R2_SECRET_ACCESS_KEY`
 - `R2_BUCKET`
-- `LIVEKIT_URL`
-- `LIVEKIT_API_KEY`
-- `LIVEKIT_API_SECRET`
 - `ALGOLIA_APP_ID`
 - `ALGOLIA_ADMIN_KEY`
 - `ALGOLIA_INDEX_NAME`
+
+`LIVEKIT_URL` and `LIVEKIT_API_KEY` still carry their placeholder as version 1;
+only the latest version is bound at deploy time, so this is inert. The stale
+`LIVEKIT_API_SECRET` version was destroyed by the CLI when the secret was
+corrected.
 
 Required provider gates:
 
