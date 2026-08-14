@@ -16,6 +16,7 @@ on:
           - rtc_backend
           - ai_backend
           - feature_backend
+          - additive_rules
           - hosting_client
           - restrictive_rules
           - full_post_migration
@@ -87,9 +88,9 @@ jobs:
           PUSH_OWNERSHIP_FUNCTIONS="functions:claimPushToken,functions:releasePushToken,functions:cleanupStalePushTokens"
           PUSH_SENDER_FUNCTIONS="functions:notifyOnMessage,functions:syncCallSignals"
           NOTIFICATION_FUNCTIONS="$PUSH_OWNERSHIP_FUNCTIONS,functions:notifyOnMessage,functions:sendStickerMessage"
-          RTC_FUNCTIONS="functions:startLiveKitCallV2,functions:getLiveKitTokenV2,functions:confirmLiveKitCall,functions:respondLiveKitCall,functions:heartbeatLiveKitCall,functions:failLiveKitCall,functions:endLiveKitCallV2,functions:cleanupStaleLiveKitCalls,functions:syncCallSignals,functions:cleanupExpiredCallSignals"
+          RTC_FUNCTIONS="functions:startLiveKitCallV2,functions:getLiveKitTokenV2,functions:confirmLiveKitCall,functions:respondLiveKitCall,functions:heartbeatLiveKitCall,functions:failLiveKitCall,functions:endLiveKitCallV2,functions:cleanupStaleLiveKitCalls,functions:cleanupExpiredCallSignals"
           AI_FUNCTIONS="functions:generateGeminiReply,functions:cleanupExpiredAIDrafts"
-          V3_FUNCTIONS="$MEMBERSHIP_FUNCTIONS,$RTC_FUNCTIONS,$NOTIFICATION_FUNCTIONS,functions:generateGeminiReply,functions:cleanupExpiredAIDrafts,functions:cleanupExpiredUploads,functions:cleanupOrphanR2Objects,functions:finalizeUpload,functions:getAttachmentDownloadUrl,functions:requestUpload,functions:searchMessages,functions:syncMessageSearchIndex,functions:cleanupExpiredCustomStickerUploads,functions:deleteCustomSticker,functions:finalizeCustomStickerUpload,functions:getCustomStickerDownloadUrl,functions:requestCustomStickerUpload"
+          V3_FUNCTIONS="$MEMBERSHIP_FUNCTIONS,$RTC_FUNCTIONS,$NOTIFICATION_FUNCTIONS,functions:syncCallSignals,functions:generateGeminiReply,functions:cleanupExpiredAIDrafts,functions:cleanupExpiredUploads,functions:cleanupOrphanR2Objects,functions:finalizeUpload,functions:getAttachmentDownloadUrl,functions:requestUpload,functions:searchMessages,functions:syncMessageSearchIndex,functions:cleanupExpiredCustomStickerUploads,functions:deleteCustomSticker,functions:finalizeCustomStickerUpload,functions:getCustomStickerDownloadUrl,functions:requestCustomStickerUpload"
           case "$ROLLOUT_PHASE" in
             additive_backend)
               pnpm exec firebase deploy --project f-chat-wayde-fu --force --only "firestore:indexes,$MEMBERSHIP_FUNCTIONS"
@@ -112,9 +113,12 @@ jobs:
             rtc_backend)
               # Scoped provider gate: this attests LiveKit only. feature_backend
               # keeps the whole-fleet gate for the phase that deploys all of them.
+              # No push gate: syncCallSignals is the only RTC Function that reads
+              # the canonical push registry, and it ships in push_sender_backend
+              # after adoption. The call state machine has to precede the Hosting
+              # client that calls it, which is before adoption can be measured.
               test "$MIGRATION_VERIFIED" = "true"
               test "${{ inputs.providers_verified }}" = "true"
-              test "${{ inputs.push_adoption_verified }}" = "true"
               pnpm exec firebase deploy --project f-chat-wayde-fu --force --only "$RTC_FUNCTIONS"
               ;;
             ai_backend)
@@ -131,6 +135,16 @@ jobs:
               test "${{ inputs.providers_verified }}" = "true"
               test "${{ inputs.push_adoption_verified }}" = "true"
               pnpm exec firebase deploy --project f-chat-wayde-fu --force --only "$V3_FUNCTIONS"
+              ;;
+            additive_rules)
+              # RTDB only. The new client writes global presence instead of the
+              # legacy room presence path, so that rule has to exist before
+              # hosting_client. database.rules.json keeps the legacy path, so an
+              # old client keeps working. Firestore Rules are not deployed here:
+              # the same file now denies client pushTokens writes, which must not
+              # land until push adoption is verified.
+              test "$MIGRATION_VERIFIED" = "true"
+              pnpm exec firebase deploy --project f-chat-wayde-fu --only database
               ;;
             hosting_client)
               # No provider gate here. This phase ships only the client bundle; the
