@@ -149,6 +149,36 @@ mattering during the rollout: the operator confirmed the existing production
 room is disposable and intends to create a new one, so the
 `CALL_INVARIANT_REPAIR_REQUIRED` fail-closed path has nothing to protect.
 
+#### Missing calls indexes (found and fixed 2026-08-14)
+
+`cleanupStaleLiveKitCalls` failed on every scheduled run from the moment it went
+live until 06:02 UTC, with `FAILED_PRECONDITION: The query requires an index`.
+
+`firestore.indexes.json` declared both composite indexes correctly. They were
+never deployed: `additive_backend` was the only phase carrying
+`firestore:indexes`, and the RTC + push rollout order gives no reason to run it.
+The RTC runbook step does say "deploy Firestore indexes and the V2 Functions";
+only the Functions half was done.
+
+Fixing it surfaced a second gap. `additive_backend` then failed with `HTTP Error:
+403` on the index request: `github-deploy` held `roles/datastore.viewer`, which
+only reads. The indexes live in production had been deployed from Cloud Shell
+under personal credentials on 2026-08-12, so the WIF account had never actually
+sent an index. `roles/datastore.indexAdmin` was granted and recorded in
+[WIF-SETUP](WIF-SETUP.md).
+
+Resolution, verified: all six composite indexes report `READY`, and the 06:02
+run logged `{"operation":"rtc.cleanup","result":"complete","count":10}`. It
+cleared **ten** stale calls on its first working pass — the phantom `active`
+records P1-01 and P1-03 describe. MIGRATION fails a V2 start closed with
+`CALL_INVARIANT_REPAIR_REQUIRED` at ten or more live legacy calls in one room,
+so the backlog was sitting exactly on that threshold while the sweeper that
+clears it was dead.
+
+PR #30 makes `rtc_backend` deploy `firestore:indexes` alongside its Functions.
+Indexes belong with the Functions that query them; a phase that ships a query
+without its index ships a Function that cannot run.
+
 #### Owed follow-up
 
 - Verify the `pushTokenClaims` invariant and mirror `ownershipVersion` from an
