@@ -8,7 +8,7 @@ PR 1 baseline：14 個 client unit tests（86.66% scoped coverage）、15 個 Fu
 
 PR 2新增`PaginatedMessageStore`的live/historical merge、dedupe與stable ordering測試；offline policy測explicit opt-in與pending revoke memory fallback；Functions測Push hash、idempotent refresh/cross-account replacement、owner-only release與privacy copy。Rules另驗證雙read-state write在任一mirror不合法時整批失敗，以及client不能寫Push mirror/global claim。真實FCM delivery、browser permission revoke、multi-tab IndexedDB lock與rollout adoption比例仍須staging/production smoke，不能由pure unit tests取代。
 
-PR 2 local gate：20個client unit tests通過，scoped statements coverage 87.95%（message store 92.3%、offline policy 100%）；19個Functions tests、18個Rules tests、signed-out Playwright 1/1全部通過。Production build core signed-in JavaScript為203.25 kB gzip，低於210 kB budget；production audit在high threshold exit 0，仍有一個既有moderate advisory待PR 4處理。GitHub CI使用Node 22執行原始`pnpm`命令，是merge的authoritative gate。
+PR 2 local gate：20個client unit tests通過，scoped statements coverage 87.95%（message store 92.3%、offline policy 100%）；19個Functions tests、18個Rules tests、signed-out Playwright 1/1全部通過。Production build core signed-in JavaScript為203.36 kB gzip，低於210 kB budget；production audit在high threshold exit 0，仍有一個既有moderate advisory待PR 4處理。GitHub CI使用Node 22執行原始`pnpm`命令，是merge的authoritative gate。
 
 每個 phase 都必須通過 README 列出的完整 gate。Rules、Functions 或 migration 變更不能以「只有三位使用者」為由略過測試。
 
