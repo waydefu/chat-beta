@@ -18,7 +18,8 @@ import {
   type MessagePage,
 } from '../messages/message.repository';
 import { requireValidMessage, structuredMentions } from '../messages/message.service';
-import type { RealtimeRoomSession } from '../realtime/realtime.repository';
+import type { GlobalPresenceSession, RealtimeRoomSession } from '../realtime/realtime.repository';
+import { onlineRoomMembers } from '../realtime/presence-state';
 import { markRoomRead, watchAvailableRooms } from '../rooms/room.repository';
 import type {
   CallMessage,
@@ -115,6 +116,8 @@ let user: AuthenticatedUser | null = null;
 let sessionScope: SessionScope | null = null;
 let roomScope: RoomScope | null = null;
 let realtime: RealtimeRoomSession | null = null;
+let globalPresence: GlobalPresenceSession | null = null;
+let presenceUnsubscribe: (() => void) | null = null;
 let roomId = '';
 let rooms = new Map<string, RoomPreview>();
 let roomStates = new Map<string, RoomReadState>();
@@ -167,9 +170,11 @@ function setPresence(open: boolean): void {
 }
 
 function setRoomControls(enabled: boolean): void {
-  for (const control of [ui.input, ui.send, ui.attach, ui.voiceMessage, ui.sticker, ui.voiceCall, ui.videoCall]) {
+  for (const control of [ui.input, ui.send, ui.attach, ui.voiceMessage, ui.sticker]) {
     control.disabled = !enabled;
   }
+  ui.voiceCall.disabled = !enabled || Boolean(callController?.active);
+  ui.videoCall.disabled = !enabled || Boolean(callController?.active);
   ui.input.placeholder = enabled ? '輸入訊息或使用 @ 提及…' : '先選擇聊天室…';
 }
 
@@ -184,8 +189,6 @@ function showConfirm(title: string, copy: string, action = '確認'): Promise<bo
 }
 
 function closeRoom(): void {
-  callController?.dispose();
-  callController = null;
   mediaController?.dispose();
   mediaController = null;
   voiceController?.dispose();
@@ -194,11 +197,14 @@ function closeRoom(): void {
   roomScope = null;
   reactionUnsubscribe?.();
   reactionUnsubscribe = null;
+  presenceUnsubscribe?.();
+  presenceUnsubscribe = null;
   if (realtime) void realtime.close();
   realtime = null;
   roomId = '';
   messages.clear();
   members = [];
+  onlineUsers = [];
   reactions = [];
   readStates.clear();
   ui.roomTitle.textContent = '選擇聊天室';
@@ -212,6 +218,10 @@ function closeRoom(): void {
 
 function cleanupSession(): void {
   closeRoom();
+  callController?.dispose();
+  callController = null;
+  if (globalPresence) void globalPresence.close();
+  globalPresence = null;
   sessionScope?.dispose();
   sessionScope = null;
   void import('../notifications/push').then(({ stopForegroundPush }) => stopForegroundPush());
@@ -318,6 +328,7 @@ async function openRoom(nextRoomId: string): Promise<void> {
   scope.add(watchRoomMembers(roomId, (value) => {
     members = value;
     updateMentionList();
+    watchMemberPresence();
   }, handleRoomAccessError));
   scope.add(watchActiveCalls(roomId, (value) => {
     activeCalls = value;
@@ -341,10 +352,6 @@ async function openRoom(nextRoomId: string): Promise<void> {
     }
     realtime = roomRealtime;
     renderConnectionStatus(true, '已連線');
-    scope.add(roomRealtime.watchPresence((value) => {
-      onlineUsers = value;
-      renderPresenceList();
-    }, () => failClosedRealtime()));
     scope.add(roomRealtime.watchTyping((names) => {
       ui.typing.textContent = names.length ? `${names.slice(0, 3).join('、')} 正在輸入…` : '';
     }, () => failClosedRealtime()));
@@ -363,6 +370,9 @@ function handleRoomAccessError(error: Error): void {
 function failClosedRealtime(): void {
   renderConnectionStatus(false, '即時狀態尚未授權');
   ui.typing.textContent = '';
+}
+
+function failClosedPresence(): void {
   onlineUsers = [];
   renderPresenceList();
 }
@@ -534,10 +544,17 @@ function renderCallInvite(message: CallMessage): HTMLElement {
     busy.textContent = '通話進行中';
     return busy;
   }
+  if (call.status === 'ending') {
+    const ending = document.createElement('p');
+    ending.className = 'call-ended';
+    ending.textContent = '通話正在結束';
+    return ending;
+  }
   const join = document.createElement('button');
   join.type = 'button';
   join.className = 'call-join';
-  join.textContent = call.kind === 'video' ? '加入視訊通話' : '加入語音通話';
+  const action = call.status === 'ringing' ? '接聽' : '加入';
+  join.textContent = `${action}${call.kind === 'video' ? '視訊' : '語音'}通話`;
   join.addEventListener('click', () => void joinCall(message.roomId, call));
   return join;
 }
@@ -828,6 +845,27 @@ function renderPresenceList(): void {
   }
 }
 
+function watchMemberPresence(): void {
+  presenceUnsubscribe?.();
+  presenceUnsubscribe = null;
+  const presence = globalPresence;
+  const currentUser = user;
+  if (!presence || !currentUser || !roomId) {
+    onlineUsers = [];
+    renderPresenceList();
+    return;
+  }
+  presenceUnsubscribe = presence.watchOnlineUsers(
+    members.map((member) => member.userId),
+    (onlineIds) => {
+      if (currentUser !== user) return;
+      onlineUsers = onlineRoomMembers(members, onlineIds, currentUser.uid);
+      renderPresenceList();
+    },
+    () => failClosedPresence(),
+  );
+}
+
 async function getMediaController(): Promise<MediaUploadController> {
   if (mediaController) return mediaController;
   if (!roomId) throw new Error('請先選擇聊天室。');
@@ -908,14 +946,20 @@ async function joinCall(messageRoomId: string, call: RoomCall): Promise<void> {
 
 async function getCallController(): Promise<CallUIController> {
   if (callController) return callController;
-  const scope = roomScope;
-  if (!scope) throw new Error('請先選擇聊天室。');
+  const scope = sessionScope;
+  if (!scope) throw new Error('請先登入。');
   const { CallUIController: Controller } = await import('../calls/call-ui.controller');
+  if (callController) return callController;
+  if (scope.signal.aborted || scope !== sessionScope) throw new DOMException('Session ended', 'AbortError');
   callController = new Controller(
     { voice: ui.voiceCall, video: ui.videoCall },
     scope.signal,
-    () => renderMessages(false),
-    (message, error) => toast(message, error ? 'error' : 'info'),
+    () => Boolean(roomId),
+    () => {
+      setRoomControls(Boolean(roomId));
+      if (roomId) renderMessages(false);
+    },
+    (message: string, error?: boolean) => toast(message, error ? 'error' : 'info'),
   );
   return callController;
 }
@@ -947,6 +991,31 @@ async function configurePush(uid: string): Promise<void> {
   if (state.error) toast(state.error, 'error');
 }
 
+async function connectSessionPresence(nextUser: AuthenticatedUser, scope: SessionScope): Promise<void> {
+  const { connectGlobalPresence } = await import('../realtime/realtime.repository');
+  const presence = await connectGlobalPresence(nextUser.uid);
+  if (scope.signal.aborted) {
+    await presence.close();
+    return;
+  }
+  globalPresence = presence;
+  scope.add(() => void presence.close());
+  watchMemberPresence();
+}
+
+async function watchSessionCalls(uid: string, scope: SessionScope): Promise<void> {
+  const [controller, repository] = await Promise.all([
+    getCallController(),
+    import('../calls/call.repository'),
+  ]);
+  if (scope.signal.aborted) return;
+  scope.add(repository.watchIncomingCalls(
+    uid,
+    (signals) => controller.updateIncoming(signals),
+    (error) => toast(`來電狀態讀取失敗：${errorText(error)}`, 'error'),
+  ));
+}
+
 function beginSession(nextUser: AuthenticatedUser): void {
   cleanupSession();
   user = nextUser;
@@ -963,7 +1032,14 @@ function beginSession(nextUser: AuthenticatedUser): void {
     const requested = new URL(window.location.href).searchParams.get('room');
     if (!roomId && requested && rooms.has(requested)) void selectRoom(rooms.get(requested)!);
   }, (error) => toast(`聊天室清單讀取失敗：${errorText(error)}`, 'error')));
-  void import('../notifications/push').then(({ watchForegroundPush }) => watchForegroundPush((message) => toast(message)));
+  void connectSessionPresence(nextUser, scope).catch(() => failClosedPresence());
+  void watchSessionCalls(nextUser.uid, scope).catch((error) => {
+    if (!scope.signal.aborted) toast(`來電監聽失敗：${errorText(error)}`, 'error');
+  });
+  void import('../notifications/push').then(({ watchForegroundPush }) => watchForegroundPush(
+    (message) => toast(message),
+    (notice) => toast(`${notice.kind === 'video' ? '視訊' : '語音'}來電`),
+  ));
   void configurePush(nextUser.uid);
 }
 

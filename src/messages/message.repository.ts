@@ -144,7 +144,7 @@ export function watchActiveCalls(
   error: (cause: Error) => void,
 ): Unsubscribe {
   return onSnapshot(
-    query(collection(firestore, 'rooms', roomId, 'calls'), where('status', '==', 'active')),
+    query(collection(firestore, 'rooms', roomId, 'calls'), where('status', 'in', ['creating', 'ringing', 'active', 'ending'])),
     (snapshot) => next(new Map(snapshot.docs.map((call) => [call.id, call.data() as RoomCall]))),
     error,
   );

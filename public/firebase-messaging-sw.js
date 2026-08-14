@@ -43,7 +43,9 @@ self.addEventListener('push', (event) => {
   }
   const data = payload.data || {};
   const notification = payload.notification || {};
+  const isCall = data.type === 'call';
   const roomId = data.roomId || '';
+  const callId = data.callId || '';
   const title = notification.title || data.title || 'Chat Lite';
   const body = notification.body || data.body || '你有一則新訊息';
 
@@ -51,22 +53,32 @@ self.addEventListener('push', (event) => {
     body,
     icon: `${BASE_PATH}image/logo-v2.png`,
     badge: `${BASE_PATH}image/logo-v2.png`,
-    // One notification per room, replaced as newer messages arrive.
-    tag: roomId ? `chat-lite-room-${roomId}` : 'chat-lite',
-    renotify: Boolean(roomId),
-    data: { roomId },
+    // Calls and chat messages have separate replacement/lifecycle semantics.
+    tag: isCall && callId ? `chat-lite-call-${callId}` : roomId ? `chat-lite-room-${roomId}` : 'chat-lite',
+    renotify: Boolean(roomId || callId),
+    requireInteraction: isCall,
+    actions: isCall ? [
+      { action: 'open-call', title: '查看來電' },
+      { action: 'dismiss', title: '忽略' },
+    ] : undefined,
+    data: { type: isCall ? 'call' : 'message', roomId, callId, kind: data.kind || '' },
   }));
 });
 
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
+  if (event.action === 'dismiss') return;
+  const type = event.notification.data && event.notification.data.type;
   const roomId = event.notification.data && event.notification.data.roomId;
-  const target = roomId ? `${BASE_PATH}?room=${encodeURIComponent(roomId)}` : BASE_PATH;
+  const callId = event.notification.data && event.notification.data.callId;
+  const target = roomId
+    ? `${BASE_PATH}?room=${encodeURIComponent(roomId)}${type === 'call' && callId ? `&call=${encodeURIComponent(callId)}` : ''}`
+    : BASE_PATH;
   event.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
       for (const client of clients) {
         if (client.url.includes(BASE_PATH) && 'focus' in client) {
-          if (roomId) client.postMessage({ type: 'open-room', roomId });
+          if (roomId) client.postMessage({ type: type === 'call' ? 'open-call' : 'open-room', roomId, callId });
           return client.focus();
         }
       }

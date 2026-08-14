@@ -115,8 +115,21 @@ export interface RoomMembership {
 export interface RoomCall {
   callId: string;
   kind: 'voice' | 'video';
-  status: 'active' | 'ended';
+  status: 'creating' | 'ringing' | 'active' | 'ending' | 'ended' | 'failed' | 'rejected' | 'missed' | 'cancelled';
   startedBy: string;
+  startedByDisplayName?: string;
+  activeAt?: TimestampLike | null;
+}
+
+export interface IncomingCallSignal {
+  callId: string;
+  roomId: string;
+  kind: 'voice' | 'video';
+  status: 'ringing' | 'accepted' | 'rejected' | 'missed' | 'cancelled' | 'active' | 'ended' | 'failed';
+  startedBy: string;
+  startedByDisplayName: string;
+  createdAt?: TimestampLike | null;
+  updatedAt?: TimestampLike | null;
 }
 
 export interface RoomReadState {
