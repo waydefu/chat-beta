@@ -40,7 +40,15 @@ export function bootstrap(): void {
   applyTheme(preferredTheme());
   watchSystemTheme(applyTheme);
   login.addEventListener('click', () => void loginWithGoogle().catch(showError));
-  logoutButton.addEventListener('click', () => void logout().catch(showError));
+  logoutButton.addEventListener('click', () => void (async () => {
+    logoutButton.disabled = true;
+    try {
+      await controller?.prepareLogout();
+      await logout();
+    } finally {
+      logoutButton.disabled = false;
+    }
+  })().catch(showError));
   if (import.meta.env.PROD && 'serviceWorker' in navigator) {
     void navigator.serviceWorker.register(`${import.meta.env.BASE_URL}firebase-messaging-sw.js`).catch(showError);
     navigator.serviceWorker.addEventListener('message', (event) => {

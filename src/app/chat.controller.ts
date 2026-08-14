@@ -1,9 +1,10 @@
 import type { AuthenticatedUser } from '../auth/auth.repository';
 import { saveOwnProfile } from '../auth/profile.repository';
 import type { CallUIController } from '../calls/call-ui.controller';
-import { OFFLINE_PREFERENCE_KEY, persistentCacheEnabled } from '../firebase/firestore-client';
+import { bindOfflineSettings } from '../firebase/offline-settings.controller';
 import type { MediaUploadController } from '../media/media-upload.controller';
 import type { VoiceMessageController } from '../media/voice-message.controller';
+import { PaginatedMessageStore } from '../messages/message-store';
 import {
   editTextMessage,
   loadOlderMessages,
@@ -76,6 +77,8 @@ const ui = {
   historicalSearch: byId<HTMLButtonElement>('historical-search-btn'),
   theme: byId<HTMLInputElement>('theme-toggle'),
   offline: byId<HTMLInputElement>('offline-toggle'),
+  offlineStatus: byId<HTMLElement>('offline-status'),
+  offlineRetry: byId<HTMLButtonElement>('offline-retry-btn'),
   pushRow: byId<HTMLInputElement>('push-toggle').closest<HTMLElement>('.setting-row')!,
   push: byId<HTMLInputElement>('push-toggle'),
   presencePanel: byId<HTMLElement>('presence-panel'),
@@ -121,7 +124,10 @@ let presenceUnsubscribe: (() => void) | null = null;
 let roomId = '';
 let rooms = new Map<string, RoomPreview>();
 let roomStates = new Map<string, RoomReadState>();
-let messages = new Map<string, ChatMessage>();
+const messageStore = new PaginatedMessageStore();
+const messages = messageStore.byId;
+const messageRows = new Map<string, HTMLElement>();
+let messagePositions = new Map<string, number>();
 let members: RoomMembership[] = [];
 let readStates = new Map<string, RoomReadState>();
 let activeCalls = new Map<string, RoomCall>();
@@ -129,7 +135,9 @@ let reactions: Reaction[] = [];
 let onlineUsers: OnlineUser[] = [];
 let oldest: MessagePage['oldest'] = null;
 let hasOlder = false;
+let historyLoaded = false;
 let reactionUnsubscribe: (() => void) | null = null;
+let reactionWatchKey = '';
 let replyToId: string | undefined;
 let editingId: string | undefined;
 let typingTimer: number | undefined;
@@ -202,7 +210,13 @@ function closeRoom(): void {
   if (realtime) void realtime.close();
   realtime = null;
   roomId = '';
-  messages.clear();
+  messageStore.clear();
+  messageRows.clear();
+  messagePositions.clear();
+  historyLoaded = false;
+  oldest = null;
+  hasOlder = false;
+  reactionWatchKey = '';
   members = [];
   onlineUsers = [];
   reactions = [];
@@ -316,12 +330,14 @@ async function openRoom(nextRoomId: string): Promise<void> {
 
   scope.add(watchRecentMessages(roomId, (page) => {
     const priorCount = messages.size;
-    messages = new Map(page.messages.map((message) => [message.id, message]));
-    oldest = page.oldest;
-    hasOlder = page.hasMore;
+    const merged = messageStore.mergeLive(page.messages, page.changedIds);
+    if (!historyLoaded) {
+      oldest = page.oldest;
+      hasOlder = page.hasMore;
+    }
     ui.loadOlder.hidden = !hasOlder;
-    renderMessages(priorCount === 0);
-    watchVisibleReactions();
+    renderMessageChanges(merged.changedIds, { scroll: priorCount === 0 });
+    if (merged.addedIds.size) watchVisibleReactions();
     const newest = page.messages.at(-1);
     if (newest && user && !document.hidden) void markRoomRead(user.uid, roomId, newest.id).catch(() => undefined);
   }, handleRoomAccessError));
@@ -332,11 +348,11 @@ async function openRoom(nextRoomId: string): Promise<void> {
   }, handleRoomAccessError));
   scope.add(watchActiveCalls(roomId, (value) => {
     activeCalls = value;
-    renderMessages(false);
+    renderCallMessages();
   }, handleRoomAccessError));
   scope.add(watchReadStates(roomId, (value) => {
     readStates = value;
-    renderMessages(false);
+    updateReadReceipts();
   }, handleRoomAccessError));
   scope.add(() => reactionUnsubscribe?.());
 
@@ -409,11 +425,10 @@ function appendMentionText(target: HTMLElement, text: string, mentions: Mention[
 }
 
 function messageReadCount(messageId: string): number {
-  const ordered = [...messages.values()].sort(compareMessages);
-  const index = ordered.findIndex((message) => message.id === messageId);
+  const index = messagePositions.get(messageId) ?? -1;
   if (index < 0) return 0;
   return [...readStates.values()].filter((state) => {
-    const readIndex = ordered.findIndex((message) => message.id === state.lastReadMessageId);
+    const readIndex = state.lastReadMessageId ? (messagePositions.get(state.lastReadMessageId) ?? -1) : -1;
     return readIndex >= index;
   }).length;
 }
@@ -421,30 +436,95 @@ function messageReadCount(messageId: string): number {
 /** Set when this client sends, so its own message wins over the follow check. */
 let scrollAfterNextRender = false;
 
-/**
- * Every update rebuilds the whole list, and read receipts alone make that happen
- * constantly. Emptying the container collapses scrollHeight, so the browser clamps
- * scrollTop and the view jumps unless the position is captured first and restored.
- * `scroll` forces the end - use it when this client caused the new content and
- * should see it regardless of where it was looking.
- */
-function renderMessages(scroll = false): void {
+interface MessageRenderOptions {
+  scroll?: boolean;
+  preservePrependAnchor?: boolean;
+}
+
+function refreshMessagePositions(ordered: readonly ChatMessage[]): void {
+  messagePositions = new Map(ordered.map((message, index) => [message.id, index]));
+}
+
+function firstVisibleMessage(list: HTMLElement): { row: HTMLElement; offset: number } | null {
+  const listTop = list.getBoundingClientRect().top;
+  for (const row of list.querySelectorAll<HTMLElement>('.message-row[data-message-id]')) {
+    if (row.isConnected && row.getBoundingClientRect().bottom >= listTop) {
+      return { row, offset: row.getBoundingClientRect().top - listTop };
+    }
+  }
+  return null;
+}
+
+function placeMessageRow(row: HTMLElement, messageId: string, ordered: readonly ChatMessage[]): void {
+  const position = messagePositions.get(messageId) ?? -1;
+  for (let index = position + 1; index < ordered.length; index += 1) {
+    const next = ordered[index];
+    const nextRow = next ? messageRows.get(next.id) : undefined;
+    if (nextRow?.isConnected) {
+      ui.messageList.insertBefore(row, nextRow);
+      return;
+    }
+  }
+  const draft = ui.messageList.querySelector<HTMLElement>('.ai-draft');
+  ui.messageList.insertBefore(row, draft);
+}
+
+/** Updates only changed keyed rows. Unrelated media elements remain mounted. */
+function renderMessageChanges(changedMessageIds: Iterable<string>, options: MessageRenderOptions = {}): void {
   const list = ui.messageList;
   const previousTop = list.scrollTop;
-  // 80px of slack still counts as reading the end.
-  const follow = scroll || scrollAfterNextRender
-    || list.scrollHeight - previousTop - list.clientHeight <= 80;
+  const anchor = options.preservePrependAnchor ? firstVisibleMessage(list) : null;
+  const follow = !options.preservePrependAnchor && (options.scroll || scrollAfterNextRender
+    || list.scrollHeight - previousTop - list.clientHeight <= 80);
   scrollAfterNextRender = false;
-  const query = ui.searchInput.value.trim().toLocaleLowerCase('zh-Hant');
-  const fragment = document.createDocumentFragment();
-  for (const message of [...messages.values()].sort(compareMessages)) {
-    const matches = !query || textOf(message).toLocaleLowerCase('zh-Hant').includes(query);
-    const row = renderMessage(message);
-    row.classList.toggle('filtered-out', !matches);
-    fragment.append(row);
+  const ordered = messageStore.ordered();
+  refreshMessagePositions(ordered);
+  const changed = new Set(changedMessageIds);
+  for (const message of ordered) {
+    if (message.replyToId && changed.has(message.replyToId)) changed.add(message.id);
   }
-  list.replaceChildren(fragment);
-  if (follow) pinToEnd(list); else list.scrollTop = previousTop;
+  for (const message of ordered) {
+    if (!changed.has(message.id) && messageRows.has(message.id)) continue;
+    const prior = messageRows.get(message.id);
+    const row = renderMessage(message);
+    messageRows.set(message.id, row);
+    if (prior?.isConnected) prior.replaceWith(row);
+    placeMessageRow(row, message.id, ordered);
+  }
+  applyMessageFilter();
+  if (follow) {
+    pinToEnd(list);
+  } else if (anchor?.row.isConnected) {
+    const currentOffset = anchor.row.getBoundingClientRect().top - list.getBoundingClientRect().top;
+    list.scrollTop += currentOffset - anchor.offset;
+  } else {
+    list.scrollTop = previousTop;
+  }
+}
+
+function applyMessageFilter(): void {
+  const query = ui.searchInput.value.trim().toLocaleLowerCase('zh-Hant');
+  for (const [messageId, row] of messageRows) {
+    const message = messages.get(messageId);
+    const matches = message && (!query || textOf(message).toLocaleLowerCase('zh-Hant').includes(query));
+    row.classList.toggle('filtered-out', !matches);
+  }
+}
+
+function updateReadReceipts(): void {
+  for (const [messageId, row] of messageRows) {
+    const message = messages.get(messageId);
+    const target = row.querySelector<HTMLElement>('[data-role="read"]');
+    if (!message || !target || message.senderId !== user?.uid) continue;
+    const count = Math.max(0, messageReadCount(messageId) - 1);
+    target.textContent = count ? `${count} 人已讀` : '';
+  }
+}
+
+function renderCallMessages(): void {
+  renderMessageChanges(messageStore.ordered()
+    .filter((message) => message.kind === 'call')
+    .map((message) => message.id));
 }
 
 /**
@@ -601,11 +681,38 @@ function renderReactionBar(message: ChatMessage): HTMLElement {
 }
 
 function watchVisibleReactions(): void {
+  const ids = messageStore.ordered().map((message) => message.id).slice(-60);
+  const nextWatchKey = ids.join('\n');
+  if (nextWatchKey === reactionWatchKey) return;
+  reactionWatchKey = nextWatchKey;
   reactionUnsubscribe?.();
-  reactionUnsubscribe = watchReactions(roomId, [...messages.keys()], (value) => {
+  reactionUnsubscribe = watchReactions(roomId, ids, (value) => {
+    const priorSignatures = reactionSignatures(reactions);
+    const nextSignatures = reactionSignatures(value);
     reactions = value;
-    renderMessages(false);
+    const changed = new Set([...priorSignatures.keys(), ...nextSignatures.keys()]
+      .filter((messageId) => priorSignatures.get(messageId) !== nextSignatures.get(messageId)));
+    updateReactionBars(changed);
   }, (error) => toast(errorText(error), 'error'));
+}
+
+function reactionSignatures(value: readonly Reaction[]): Map<string, string> {
+  const grouped = new Map<string, string[]>();
+  for (const reaction of value) {
+    const bucket = grouped.get(reaction.messageId) ?? [];
+    bucket.push(`${reaction.userId}:${reaction.emoji}`);
+    grouped.set(reaction.messageId, bucket);
+  }
+  return new Map([...grouped].map(([messageId, entries]) => [messageId, entries.sort().join('|')]));
+}
+
+function updateReactionBars(messageIds: Iterable<string>): void {
+  for (const messageId of messageIds) {
+    const message = messages.get(messageId);
+    const row = messageRows.get(messageId);
+    const prior = row?.querySelector<HTMLElement>('.reaction-bar');
+    if (message && prior) prior.replaceWith(renderReactionBar(message));
+  }
 }
 
 function setReply(message: ChatMessage): void {
@@ -811,11 +918,12 @@ async function loadOlder(): Promise<void> {
   ui.loadOlder.disabled = true;
   try {
     const page = await loadOlderMessages(roomId, oldest);
-    for (const message of page.messages) messages.set(message.id, message);
+    const merged = messageStore.mergeHistorical(page.messages);
+    historyLoaded = true;
     oldest = page.oldest;
     hasOlder = page.hasMore;
     ui.loadOlder.hidden = !hasOlder;
-    renderMessages(false);
+    renderMessageChanges(merged.changedIds, { preservePrependAnchor: true });
     watchVisibleReactions();
   } catch (error) {
     toast(errorText(error), 'error');
@@ -957,7 +1065,7 @@ async function getCallController(): Promise<CallUIController> {
     () => Boolean(roomId),
     () => {
       setRoomControls(Boolean(roomId));
-      if (roomId) renderMessages(false);
+      if (roomId) renderCallMessages();
     },
     (message: string, error?: boolean) => toast(message, error ? 'error' : 'info'),
   );
@@ -1037,7 +1145,10 @@ function beginSession(nextUser: AuthenticatedUser): void {
     if (!scope.signal.aborted) toast(`來電監聽失敗：${errorText(error)}`, 'error');
   });
   void import('../notifications/push').then(({ watchForegroundPush }) => watchForegroundPush(
-    (message) => toast(message),
+    (notice) => {
+      if (!document.hidden && notice.roomId === roomId) return;
+      toast(notice.body ? `${notice.title}：${notice.body}` : notice.title);
+    },
     (notice) => toast(`${notice.kind === 'video' ? '視訊' : '語音'}來電`),
   ));
   void configurePush(nextUser.uid);
@@ -1078,7 +1189,7 @@ function bindEvents(): void {
   ui.cancelReply.addEventListener('click', cancelReply);
   ui.cancelEdit.addEventListener('click', cancelEditing);
   ui.loadOlder.addEventListener('click', () => void loadOlder());
-  ui.searchInput.addEventListener('input', () => renderMessages(false));
+  ui.searchInput.addEventListener('input', applyMessageFilter);
   ui.searchToggle.addEventListener('click', () => {
     ui.searchBar.hidden = false;
     ui.searchToggle.setAttribute('aria-expanded', 'true');
@@ -1088,7 +1199,7 @@ function bindEvents(): void {
     ui.searchBar.hidden = true;
     ui.searchToggle.setAttribute('aria-expanded', 'false');
     ui.searchInput.value = '';
-    renderMessages(false);
+    applyMessageFilter();
   });
   ui.historicalSearch.addEventListener('click', () => void runHistoricalSearch());
   ui.openSidebar.addEventListener('click', () => setSidebar(true));
@@ -1102,17 +1213,13 @@ function bindEvents(): void {
     setTheme(theme);
   });
   watchSystemTheme(setTheme);
-  ui.offline.addEventListener('change', () => {
-    localStorage.setItem(OFFLINE_PREFERENCE_KEY, String(ui.offline.checked));
-    toast('離線資料設定會在重新載入後套用。');
-  });
   ui.push.addEventListener('change', () => {
     if (!user) return;
     void (async () => {
-      const { setPushPreference } = await import('../notifications/push');
+      const { PUSH_PREFERENCE_KEY, setPushPreference } = await import('../notifications/push');
       const error = await setPushPreference(user!.uid, ui.push.checked);
       if (error) {
-        ui.push.checked = false;
+        ui.push.checked = localStorage.getItem(PUSH_PREFERENCE_KEY) === 'true';
         toast(error, 'error');
       }
     })();
@@ -1156,18 +1263,33 @@ function bindEvents(): void {
 export interface ChatController {
   open(user: AuthenticatedUser): void;
   close(): void;
+  prepareLogout(): Promise<void>;
   openRequestedRoom(roomId: string): void;
 }
 
 export function initializeChatController(): ChatController {
   setTheme(preferredTheme());
-  ui.offline.checked = persistentCacheEnabled;
+  bindOfflineSettings({ toggle: ui.offline, status: ui.offlineStatus, retry: ui.offlineRetry }, {
+    confirm: () => showConfirm(
+      '清除此裝置的離線聊天資料',
+      '系統會先等待待送訊息同步，再清除 IndexedDB。若其他分頁仍開著，會維持待清除狀態。',
+      '清除並重新載入',
+    ),
+    beforeRevoke: cleanupSession,
+    notify: (message, error) => toast(message, error ? 'error' : 'info'),
+  });
   setRoomControls(false);
   bindEvents();
   return {
     open(nextUser) { beginSession(nextUser); },
     close() {
       cleanupSession();
+    },
+    async prepareLogout() {
+      const currentUser = user;
+      if (!currentUser) return;
+      const { releasePushForLogout } = await import('../notifications/push');
+      await releasePushForLogout(currentUser.uid);
     },
     openRequestedRoom(requestedRoom) {
       if (rooms.has(requestedRoom)) void selectRoom(rooms.get(requestedRoom)!);

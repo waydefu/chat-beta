@@ -45,6 +45,7 @@
   --dur-4:360ms;
   --dur-5:480ms;
 }
+.setting-copy{display:grid;gap:2px}.setting-copy small{max-width:180px;color:var(--muted);font-size:.66rem;font-weight:500;line-height:1.35}.offline-retry{width:100%;border:0;border-radius:9px;padding:7px 9px;background:var(--blue-soft);color:var(--blue);font-size:.72rem;font-weight:700}
 
 :root[data-theme=dark]{
   --surface:#111a2c;

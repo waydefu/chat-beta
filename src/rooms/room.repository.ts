@@ -1,12 +1,14 @@
 import {
   collection,
   doc,
-  getDoc,
+  documentId,
+  getDocs,
+  limit,
   onSnapshot,
   orderBy,
   query,
   serverTimestamp,
-  setDoc,
+  writeBatch,
   where,
   type DocumentData,
   type QueryDocumentSnapshot,
@@ -21,16 +23,32 @@ function roomFromSnapshot(snapshot: QueryDocumentSnapshot<DocumentData>): RoomPr
 }
 
 export async function markRoomRead(uid: string, roomId: string, messageId: string): Promise<void> {
-  await setDoc(doc(firestore, 'rooms', roomId, 'readStates', uid), {
+  const batch = writeBatch(firestore);
+  const readState = {
     lastReadMessageId: messageId,
     lastReadAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
-  }, { merge: true });
-  await setDoc(doc(firestore, 'users', uid, 'roomStates', roomId), {
-    lastReadMessageId: messageId,
-    lastReadAt: serverTimestamp(),
-    updatedAt: serverTimestamp(),
-  }, { merge: true });
+  };
+  batch.set(doc(firestore, 'rooms', roomId, 'readStates', uid), readState, { merge: true });
+  batch.set(doc(firestore, 'users', uid, 'roomStates', roomId), readState, { merge: true });
+  await batch.commit();
+}
+
+export const PUBLIC_ROOM_WINDOW = 100;
+export const ROOM_STATE_WINDOW = 250;
+
+async function getRoomsByIds(roomIds: readonly string[]): Promise<RoomPreview[]> {
+  const rooms: RoomPreview[] = [];
+  for (let index = 0; index < roomIds.length; index += 30) {
+    const ids = roomIds.slice(index, index + 30);
+    if (!ids.length) continue;
+    const snapshot = await getDocs(query(
+      collection(firestore, 'rooms'),
+      where(documentId(), 'in', ids),
+    ));
+    rooms.push(...snapshot.docs.map(roomFromSnapshot));
+  }
+  return rooms;
 }
 
 export function watchAvailableRooms(
@@ -47,13 +65,10 @@ export function watchAvailableRooms(
     const privateIds = [...states.entries()]
       .filter(([id, state]) => state.membershipStatus === 'active' && !publicRooms.has(id))
       .map(([id]) => id);
-    const privateRooms = await Promise.all(privateIds.map(async (roomId) => {
-      const snapshot = await getDoc(doc(firestore, 'rooms', roomId));
-      return snapshot.exists() ? ({ id: snapshot.id, ...snapshot.data() } as RoomPreview) : null;
-    }));
+    const privateRooms = await getRoomsByIds(privateIds);
     if (currentGeneration !== generation) return;
     const merged = new Map(publicRooms);
-    for (const room of privateRooms) if (room) merged.set(room.id, room);
+    for (const room of privateRooms) merged.set(room.id, room);
     next([...merged.values()].sort((a, b) => {
       const time = (b.updatedAt?.toMillis() ?? 0) - (a.updatedAt?.toMillis() ?? 0);
       return time || a.name.localeCompare(b.name, 'zh-Hant');
@@ -61,7 +76,12 @@ export function watchAvailableRooms(
   };
 
   const publicUnsubscribe = onSnapshot(
-    query(collection(firestore, 'rooms'), where('visibility', '==', 'public'), orderBy('updatedAt', 'desc')),
+    query(
+      collection(firestore, 'rooms'),
+      where('visibility', '==', 'public'),
+      orderBy('updatedAt', 'desc'),
+      limit(PUBLIC_ROOM_WINDOW),
+    ),
     (snapshot) => {
       publicRooms = new Map(snapshot.docs.map((room) => [room.id, roomFromSnapshot(room)]));
       void emit().catch((cause: unknown) => error(cause instanceof Error ? cause : new Error(String(cause))));
@@ -69,7 +89,7 @@ export function watchAvailableRooms(
     (cause) => error(cause),
   );
   const statesUnsubscribe = onSnapshot(
-    collection(firestore, 'users', uid, 'roomStates'),
+    query(collection(firestore, 'users', uid, 'roomStates'), orderBy('updatedAt', 'desc'), limit(ROOM_STATE_WINDOW)),
     (snapshot) => {
       states = new Map(snapshot.docs.map((state) => [state.id, state.data() as RoomReadState]));
       void emit().catch((cause: unknown) => error(cause instanceof Error ? cause : new Error(String(cause))));
