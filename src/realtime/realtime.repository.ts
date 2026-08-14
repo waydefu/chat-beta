@@ -8,13 +8,12 @@ import {
   set,
   update,
   type DatabaseReference,
-  type OnDisconnect,
 } from 'firebase/database';
 
 import { rtdb } from '../firebase/realtime-client';
 import type { Unsubscribe } from '../types';
 import { encodeRoomKey } from '../utils';
-import { hasOnlineConnection, PRESENCE_HEARTBEAT_MS } from './presence-state';
+import { hasOnlineConnection, PRESENCE_HEARTBEAT_MS, type PresenceConnectionState } from './presence-state';
 
 export interface GlobalPresenceSession {
   watchOnlineUsers(userIds: string[], next: (onlineUserIds: Set<string>) => void, error: (cause: Error) => void): Unsubscribe;
@@ -39,10 +38,14 @@ async function removeIfPresent(target: DatabaseReference): Promise<boolean> {
 }
 
 export async function connectGlobalPresence(uid: string): Promise<GlobalPresenceSession> {
-  const connectionsPath = `realtime/presence/${uid}/connections`;
-  let connection: DatabaseReference | null = null;
-  let disconnect: OnDisconnect | null = null;
+  // One node for the whole session, re-set on every reconnect. Pushing a fresh
+  // key each time orphans the previous node whenever the server has not already
+  // run its onDisconnect, and nothing afterwards can reach it: the heartbeat
+  // only follows the current ref, and close() only removes the current ref.
+  const connection = push(ref(rtdb, `realtime/presence/${uid}/connections`));
+  const disconnect = onDisconnect(connection);
   let heartbeat: ReturnType<typeof setInterval> | null = null;
+  let inFlight: Promise<void> | null = null;
   let serverTimeOffset = 0;
   let closed = false;
 
@@ -60,41 +63,44 @@ export async function connectGlobalPresence(uid: string): Promise<GlobalPresence
 
   // Refreshing updatedAt is what lets every other client tell a live connection
   // from one whose onDisconnect never fired.
-  function startHeartbeat(target: DatabaseReference): void {
+  function startHeartbeat(): void {
     stopHeartbeat();
     heartbeat = setInterval(() => {
-      if (closed || connection !== target) return;
-      void update(target, { updatedAt: serverTimestamp() }).catch(() => undefined);
+      if (closed) return;
+      void update(connection, { updatedAt: serverTimestamp() }).catch(() => undefined);
     }, PRESENCE_HEARTBEAT_MS);
   }
 
-  // The server removes this connection the moment the socket drops. Nothing
-  // restores it on its own, so every reconnect has to write a fresh one or the
-  // user stays invisible to everyone else for the rest of the session.
+  // The server removes this node the moment the socket drops. Nothing restores
+  // it on its own, so every reconnect has to write it again or the user stays
+  // invisible to everyone else for the rest of the session.
   async function establish(): Promise<void> {
     stopHeartbeat();
-    connection = null;
-    disconnect = null;
-    const next = push(ref(rtdb, connectionsPath));
-    const handler = onDisconnect(next);
-    await handler.remove();
+    await disconnect.remove();
+    if (closed) return;
+    await set(connection, {
+      state: 'online',
+      connectedAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+    // close() may have run while that write was in flight; it would have found
+    // nothing to remove, so undo the write here instead of leaking a node.
     if (closed) {
-      await handler.cancel().catch(() => undefined);
+      await removeIfPresent(connection);
       return;
     }
-    try {
-      await set(next, {
-        state: 'online',
-        connectedAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      });
-    } catch (error) {
-      await handler.cancel().catch(() => undefined);
-      throw error;
-    }
-    connection = next;
-    disconnect = handler;
-    startHeartbeat(next);
+    startHeartbeat();
+  }
+
+  // .info/connected can report true more than once without an intervening
+  // disconnect. Coalescing keeps two runs from racing over the same node.
+  function establishOnce(): Promise<void> {
+    if (inFlight) return inFlight;
+    const run = establish().finally(() => {
+      if (inFlight === run) inFlight = null;
+    });
+    inFlight = run;
+    return run;
   }
 
   let watchConnected: Unsubscribe = () => undefined;
@@ -109,7 +115,7 @@ export async function connectGlobalPresence(uid: string): Promise<GlobalPresence
     watchConnected = onValue(ref(rtdb, '.info/connected'), (snapshot) => {
       if (closed || snapshot.val() !== true) return;
       // A later reconnect that fails is not fatal: the next one retries.
-      void establish().then(() => settle()).catch((error: Error) => settle(error));
+      void establishOnce().then(() => settle()).catch((error: Error) => settle(error));
     }, (error) => settle(error));
   });
 
@@ -120,7 +126,7 @@ export async function connectGlobalPresence(uid: string): Promise<GlobalPresence
         next(new Set());
         return () => undefined;
       }
-      const latest = new Map<string, Record<string, { state?: unknown; updatedAt?: unknown }>>();
+      const latest = new Map<string, Record<string, PresenceConnectionState>>();
       let emitted = '';
       const emit = (): void => {
         const active = [...latest].flatMap(([candidate, connections]) => (
@@ -137,7 +143,7 @@ export async function connectGlobalPresence(uid: string): Promise<GlobalPresence
       const unsubscribes = ids.map((candidate) => onValue(
         ref(rtdb, `realtime/presence/${candidate}/connections`),
         (snapshot) => {
-          latest.set(candidate, (snapshot.val() ?? {}) as Record<string, { state?: unknown; updatedAt?: unknown }>);
+          latest.set(candidate, (snapshot.val() ?? {}) as Record<string, PresenceConnectionState>);
           emit();
         },
         error,
@@ -157,11 +163,10 @@ export async function connectGlobalPresence(uid: string): Promise<GlobalPresence
       stopHeartbeat();
       watchConnected();
       watchOffset();
-      const target = connection;
-      const handler = disconnect;
-      connection = null;
-      disconnect = null;
-      if (target && await removeIfPresent(target)) await handler?.cancel().catch(() => undefined);
+      // Let any in-flight establish finish, so it cannot write the node back
+      // after the removal below.
+      await inFlight?.catch(() => undefined);
+      if (await removeIfPresent(connection)) await disconnect.cancel().catch(() => undefined);
     },
   };
 }
