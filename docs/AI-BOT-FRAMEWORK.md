@@ -1,6 +1,6 @@
 # AI bot framework
 
-只有 structured mention `{type:"bot", id:"gemini", start, end}` 會觸發 bot；純文字比對不會觸發。request ID 固定為 `sourceMessageId_botId`，`aiRequests` 保存 lease、attempt、status、usage、latency、model、finalMessageId 與 failure category。
+只有 structured mention `{type:"bot", id:"gemini", start, end}` 會觸發 bot。這是 server 端的判準，但 client 會從輸入文字產生該結構：`src/messages/message.service.ts` 比對 `@Gemini` 並帶 token boundary 檢查，所以**手打 `@Gemini` 一樣會觸發**；不含 `@` 的「Gemini」與 `@GeminiTest` 這類延伸字串則不會。request ID 固定為 `sourceMessageId_botId`，`aiRequests` 保存 lease、attempt、status、usage、latency、model、finalMessageId 與 failure category。
 
 ```text
 @Gemini message → callable stream → provider
