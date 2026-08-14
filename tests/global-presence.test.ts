@@ -74,24 +74,35 @@ describe('global presence session', () => {
     await session.close();
   });
 
-  it('writes a fresh connection after every reconnect', async () => {
+  it('reuses one node across reconnects instead of leaving orphans behind', async () => {
     const session = await connect('me');
-    // The server already deleted the first node when the socket dropped.
     goOnline();
     await vi.waitFor(() => expect(state.writes).toHaveLength(2));
-    expect(state.writes[1]?.path).toBe(`${connectionsOf('me')}/c2`);
     goOnline();
     await vi.waitFor(() => expect(state.writes).toHaveLength(3));
+    // Every write lands on the same key. A new key per reconnect would strand
+    // the previous node whenever the server had not already reaped it.
+    expect(new Set(state.writes.map((write) => write.path)).size).toBe(1);
+    expect(state.pushed).toBe(1);
     await session.close();
   });
 
-  it('removes only the current connection on close', async () => {
+  it('re-arms the disconnect removal on every reconnect', async () => {
+    const session = await connect('me');
+    goOnline();
+    await vi.waitFor(() => expect(state.writes).toHaveLength(2));
+    // The server consumed the first arming when the socket dropped.
+    expect(state.disconnectRemovals).toHaveLength(2);
+    await session.close();
+  });
+
+  it('removes the connection and cancels the disconnect on close', async () => {
     const session = await connect('me');
     goOnline();
     await vi.waitFor(() => expect(state.writes).toHaveLength(2));
     await session.close();
-    expect(state.removed).toEqual([`${connectionsOf('me')}/c2`]);
-    expect(state.disconnectCancels).toEqual([`${connectionsOf('me')}/c2`]);
+    expect(state.removed).toEqual([`${connectionsOf('me')}/c1`]);
+    expect(state.disconnectCancels).toEqual([`${connectionsOf('me')}/c1`]);
   });
 
   it('stops re-establishing after close', async () => {
@@ -109,7 +120,7 @@ describe('global presence session', () => {
     const stop = session.watchOnlineUsers(['alice'], (ids) => seen.push([...ids]), () => undefined);
 
     emit('.info/serverTimeOffset', 0);
-    emit(connectionsOf('alice'), { tab: { state: 'online', updatedAt: 0 } });
+    emit(connectionsOf('alice'), { tab: { state: 'online', connectedAt: -1, updatedAt: 0 } });
     expect(seen.at(-1)).toEqual(['alice']);
 
     // Alice's tab was killed: her node stops changing, so nothing re-notifies
@@ -119,6 +130,28 @@ describe('global presence session', () => {
     expect(seen.at(-1)).toEqual([]);
 
     stop();
+    await session.close();
+  });
+
+
+  it('does not leave the node behind when close races an in-flight establish', async () => {
+    const session = await connect('me');
+    // A reconnect lands, then close() runs before its write settles.
+    goOnline();
+    await session.close();
+    await vi.waitFor(() => expect(state.removed.length).toBeGreaterThan(0));
+    // Whatever order they finished in, nothing is left written.
+    expect(state.removed).toContain(`${connectionsOf('me')}/c1`);
+  });
+
+  it('coalesces overlapping connected events into one establish', async () => {
+    const session = await connect('me');
+    goOnline();
+    goOnline();
+    goOnline();
+    await vi.waitFor(() => expect(state.writes.length).toBeGreaterThan(1));
+    // Three events, but they overlap, so they must not each push their own node.
+    expect(state.pushed).toBe(1);
     await session.close();
   });
 

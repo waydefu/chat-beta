@@ -2,25 +2,45 @@ import type { OnlineUser, RoomMembership } from '../types';
 
 export interface PresenceConnectionState {
   state?: unknown;
+  connectedAt?: unknown;
   updatedAt?: unknown;
 }
 
 /**
- * A connection is re-armed on every reconnect and its `updatedAt` is refreshed
- * on a heartbeat, so anything older than this missed several beats in a row and
- * is treated as gone. Without it a connection whose `onDisconnect` never fired —
- * a killed tab, a dropped socket the server has not reaped — marks its owner
- * online forever, because one stale entry is enough to satisfy the projection.
+ * A heartbeating client refreshes `updatedAt` on this interval, so anything
+ * older than a few missed beats is gone: a killed tab, or a socket the server
+ * never reaped. One such entry is enough to hold its owner online forever,
+ * which is why the timestamp has to be read rather than merely written.
  */
 export const PRESENCE_HEARTBEAT_MS = 45_000;
 export const PRESENCE_STALE_AFTER_MS = PRESENCE_HEARTBEAT_MS * 3;
 
+/**
+ * Clients from before heartbeats existed write `updatedAt` once at connect and
+ * never touch it again, so the strict window would hide people who are sitting
+ * right there. They get a long window instead of an exemption: a user who never
+ * reloads stays visible while they keep the tab open, and a connection they
+ * abandoned still disappears the same day. Delete this once the seven-day
+ * legacy gate closes and no pre-heartbeat client can still be connected.
+ */
+export const PRESENCE_LEGACY_TRUST_MS = 12 * 60 * 60_000;
+
 function isLive(connection: PresenceConnectionState, serverNow: number): boolean {
   if (connection.state !== 'online' && connection.state !== 'away') return false;
-  // A connection written before heartbeats existed carries no usable timestamp.
-  // Trust it rather than hiding a user who is genuinely here.
-  if (typeof connection.updatedAt !== 'number') return true;
-  return serverNow - connection.updatedAt < PRESENCE_STALE_AFTER_MS;
+  const { connectedAt, updatedAt } = connection;
+  const stamp = typeof updatedAt === 'number' ? updatedAt
+    : typeof connectedAt === 'number' ? connectedAt
+      : null;
+  // The rules require both timestamps, so this is unreachable in production.
+  // If it ever happens, show the user rather than hide them over bad metadata.
+  if (stamp === null) return true;
+  // Only a heartbeat moves `updatedAt` past `connectedAt`. A connection where
+  // they are still equal is either pre-heartbeat or younger than one beat, and
+  // both want the forgiving window.
+  const heartbeating = typeof connectedAt === 'number'
+    && typeof updatedAt === 'number'
+    && updatedAt > connectedAt;
+  return serverNow - stamp < (heartbeating ? PRESENCE_STALE_AFTER_MS : PRESENCE_LEGACY_TRUST_MS);
 }
 
 export function hasOnlineConnection(

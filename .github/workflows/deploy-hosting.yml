@@ -90,10 +90,14 @@ jobs:
           NOTIFICATION_FUNCTIONS="$PUSH_OWNERSHIP_FUNCTIONS,functions:notifyOnMessage,functions:sendStickerMessage"
           RTC_FUNCTIONS="functions:startLiveKitCallV2,functions:getLiveKitTokenV2,functions:confirmLiveKitCall,functions:respondLiveKitCall,functions:heartbeatLiveKitCall,functions:failLiveKitCall,functions:endLiveKitCallV2,functions:cleanupStaleLiveKitCalls,functions:cleanupExpiredCallSignals"
           AI_FUNCTIONS="functions:generateGeminiReply,functions:cleanupExpiredAIDrafts"
-          V3_FUNCTIONS="$MEMBERSHIP_FUNCTIONS,$RTC_FUNCTIONS,$NOTIFICATION_FUNCTIONS,functions:syncCallSignals,functions:generateGeminiReply,functions:cleanupExpiredAIDrafts,functions:cleanupExpiredUploads,functions:cleanupOrphanR2Objects,functions:finalizeUpload,functions:getAttachmentDownloadUrl,functions:requestUpload,functions:searchMessages,functions:syncMessageSearchIndex,functions:cleanupExpiredCustomStickerUploads,functions:deleteCustomSticker,functions:finalizeCustomStickerUpload,functions:getCustomStickerDownloadUrl,functions:requestCustomStickerUpload"
+          PRESENCE_FUNCTIONS="functions:cleanupStalePresence"
+          V3_FUNCTIONS="$MEMBERSHIP_FUNCTIONS,$RTC_FUNCTIONS,$NOTIFICATION_FUNCTIONS,$PRESENCE_FUNCTIONS,functions:syncCallSignals,functions:generateGeminiReply,functions:cleanupExpiredAIDrafts,functions:cleanupExpiredUploads,functions:cleanupOrphanR2Objects,functions:finalizeUpload,functions:getAttachmentDownloadUrl,functions:requestUpload,functions:searchMessages,functions:syncMessageSearchIndex,functions:cleanupExpiredCustomStickerUploads,functions:deleteCustomSticker,functions:finalizeCustomStickerUpload,functions:getCustomStickerDownloadUrl,functions:requestCustomStickerUpload"
           case "$ROLLOUT_PHASE" in
             additive_backend)
-              pnpm exec firebase deploy --project f-chat-wayde-fu --force --only "firestore:indexes,$MEMBERSHIP_FUNCTIONS"
+              # cleanupStalePresence rides here rather than with rtc_backend: it
+              # touches no provider, so it must not sit behind an attestation
+              # about LiveKit that has nothing to do with it.
+              pnpm exec firebase deploy --project f-chat-wayde-fu --force --only "firestore:indexes,$MEMBERSHIP_FUNCTIONS,$PRESENCE_FUNCTIONS"
               ;;
             notification_backend)
               # Backward-compatible phase name. It now establishes ownership before
