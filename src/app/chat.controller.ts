@@ -22,6 +22,7 @@ import { requireValidMessage, structuredMentions } from '../messages/message.ser
 import type { GlobalPresenceSession, RealtimeRoomSession } from '../realtime/realtime.repository';
 import { onlineRoomMembers } from '../realtime/presence-state';
 import { markRoomRead, watchAvailableRooms } from '../rooms/room.repository';
+import { renderAiSources } from '../bots/grounding.view';
 import type {
   CallMessage,
   ChatMessage,
@@ -597,6 +598,9 @@ function renderMessage(message: ChatMessage): HTMLElement {
     meta.append(read);
   }
   bubble.append(content);
+  if (message.metadata?.grounding?.usedSearch && message.metadata.grounding.sources?.length) {
+    bubble.append(renderAiSources(message.metadata.grounding.sources));
+  }
   if (message.kind === 'call' && message.event === 'started') bubble.append(renderCallInvite(message));
   bubble.append(meta);
   wrap.append(bubble, renderReactionBar(message));

@@ -262,11 +262,15 @@ gh workflow run "Deploy Firebase production" --repo waydefu/chat-beta -f rollout
 ### 7.5 驗收
 
 1. 在訊息裡提及 Gemini，送出後應看到逐字串流的回覆。**用 `@` 選單挑選，或直接手打 `@Gemini`，兩者都會觸發** —— client 是以文字比對 `@Gemini` 產生結構化提及的（`src/messages/message.service.ts`）。不含 `@` 的「Gemini」不會觸發，`@GeminiTest` 這類延伸字串也不會（token boundary 檢查）。
-2. 串流中按取消，草稿應消失且不留下最終訊息。
-3. 另一個帳號在同一房間應看得到生成中的草稿。
-4. Firestore `rooms/{roomId}/aiRequests/{runId}` 有 status、usage、latency、model 紀錄。
-5. Cloud Logging 確認**完整 prompt 沒有被寫進日誌**。
-6. 十分鐘後確認過期草稿被清掉。
+2. **Google Search Grounding 驗證**：
+   - 知識/推理題（如「1+1 是多少？」）：直接回答，不觸發 Search grounding，無來源區塊。
+   - 即時新聞/時事題（如「今天有什麼重要 AI 新聞？」）：使用 grounding，訊息下方顯示「來源 · N」折疊面板，展開顯示最多 5 個標題與網域連結。
+   - 一般天氣題（如「淡水現在天氣如何？」）：使用 grounding 說明近期資訊與時間點，若無地點（「今天天氣如何？」）主動反問地點，不猜測所在地。
+3. 串流中按取消，草稿應消失且不留下最終訊息。
+4. 另一個帳號在同一房間應看得到生成中的草稿。
+5. Firestore `rooms/{roomId}/aiRequests/{runId}` 有 status、usage、latency、model、groundingUsed、groundingSourceCount 紀錄。
+6. Cloud Logging 確認**完整 prompt、使用者 query、造訪 URL 與頁面標題絕不寫入日誌**（僅記錄 `groundingUsed` 與 `groundingSourceCount`）。
+7. 十分鐘後確認過期草稿被清掉。
 
 ### 7.6 回滾
 

@@ -32,6 +32,23 @@ export interface Attachment {
   previewKey?: string;
 }
 
+export interface AISource {
+  title: string;
+  url: string;
+}
+
+export interface AIGrounding {
+  usedSearch: boolean;
+  sources: AISource[];
+}
+
+export interface MessageMetadata {
+  aiRequestId?: string;
+  model?: string;
+  grounding?: AIGrounding;
+  [key: string]: unknown;
+}
+
 export interface MessageBase {
   id: string;
   roomId: string;
@@ -47,6 +64,7 @@ export interface MessageBase {
   deletedAt?: TimestampLike | null;
   pending?: boolean;
   failed?: boolean;
+  metadata?: MessageMetadata;
 }
 
 export interface TextMessage extends MessageBase {

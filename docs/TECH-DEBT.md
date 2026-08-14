@@ -9,6 +9,8 @@
 | TD-A1 | `@google/genai` 安裝 `^1.15.0`，最新為 `2.17.1`，差一個主版本 | 落後兩年份的 SDK 修正與型別；升級具破壞性風險 | 中 | Gemini production 穩定執行至少七天 | 2026-08-21 | 升 v2 後 `functions` typecheck 與全部 bot 測試通過，且 production smoke 重跑一次串流、取消、usage metadata |
 | TD-A2 | `generateGeminiReply` 的 callable 層無測試（lease、replay、串流、取消、並行釋放） | 這些是 race-safety 的核心路徑，回歸不會被 CI 擋下 | **高** | 需要 Firestore 與 GenAI SDK 的 mock 邊界 | 立即 | 涵蓋首次請求、lease 中重複、過期 lease replay、完成後 replay、取消不留 final message、429/5xx/timeout、context > 24k、`finally` 釋放並行 |
 | TD-A3 | `context-builder.ts` 與 `rate-limit.ts` 無測試 | context 修剪與速率限制錯誤只會在 production 顯現 | 高 | 同上 mock 邊界 | 立即 | 涵蓋排序、reply context、token 修剪、不洩漏其他房間、正常取得／並行／釋放／過期 lease |
+| TD-A4 | Inline Grounding Citations（行內引用標註與文字 span mapping） | 訊息僅提供整則來源列表，無句級/段落級細緻引用 | 低 | Google Search Grounding 上線穩定 | 待排 | 保留 `groundingSupports`，支援點擊引文標號跳轉或反白對應來源 |
+| TD-A5 | Dedicated Weather Tool（專用氣象 API 整合） | 搜尋 grounding 無法保證即時精確經緯度預報與警報結構 | 中 | Google Search Grounding 上線穩定 | 待排 | 整合專用 Weather API 提供氣溫、降雨機率、逐時/10日預報與卡片渲染 |
 | TD-P1 | typing 寫入 `updatedAt` 但 `watchTyping` 從不讀，沒有 TTL | `onDisconnect` 未觸發時，該使用者對全房間永遠顯示「正在輸入」 | 中 | 無 | 立即 | 讀取端套用與 presence 相同的過期判定；補測試涵蓋過期與未過期 |
 | TD-P2 | `typingTimer` 在 `closeRoom`／`cleanupSession` 未清除 | 1800ms 內切換房間時，計時器會對**新**房間誤送 `setTyping(false)` | 中 | 無 | 立即 | 切房後舊計時器不影響新房間；lifecycle 有明確 owner |
 | TD-P3 | presence 的 12 小時 legacy 相容窗（`PRESENCE_LEGACY_TRUST_MS`） | 過渡期措施，長期會讓真正的殭屍連線多存活 12 小時 | 中 | 全部 client 都已載入 #33 之後的版本 | 2026-08-21 | 移除該分支與常數，`hasOnlineConnection` 只留嚴格窗，測試同步更新 |
