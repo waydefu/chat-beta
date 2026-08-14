@@ -1,6 +1,6 @@
 # Production handoff
 
-Last updated: 2026-08-12 (Asia/Taipei)
+Last updated: 2026-08-14 (Asia/Taipei)
 
 This document records the production state after the Chat Lite 3.0 ACL rollout. It is the starting point for the next operator. Never copy secret values, user IDs, migration artifacts, or production data into Git.
 
@@ -14,7 +14,7 @@ This document records the production state after the Chat Lite 3.0 ACL rollout. 
 | Billing account | `017AC8-677C35-503670` |
 | Primary region | `asia-east1` |
 | Production branch | `main` |
-| Deployed commit | `31abe4a77f8c7c2ffe1409b8c2891852cf2f06fa` |
+| Deployed commit | `007017f5fe6bf6f676e223861e03780a9fef5fe3` |
 | App Check | reCAPTCHA Enterprise key configured; monitor before enforcement |
 | FCM | production VAPID key configured |
 
@@ -71,16 +71,73 @@ Notifications and stickers (deployed 2026-08-13, `notification_backend` phase):
 - `notifyOnMessage`
 - `sendStickerMessage`
 
-Calls (deployed 2026-08-13, `rtc_backend` phase):
+Calls V1 (deployed 2026-08-13, `rtc_backend` phase). Superseded by V2 and no
+longer called by the shipped client; kept until the seven-day cleanup gate:
 
 - `startLiveKitCall`
 - `getLiveKitToken`
 - `endLiveKitCall`
 
+Push ownership (deployed 2026-08-14, `push_ownership_backend` phase):
+
+- `claimPushToken`
+- `releasePushToken`
+- `cleanupStalePushTokens`
+
+Calls V2 (deployed 2026-08-14, `rtc_backend` phase):
+
+- `startLiveKitCallV2`
+- `getLiveKitTokenV2`
+- `confirmLiveKitCall`
+- `respondLiveKitCall`
+- `heartbeatLiveKitCall`
+- `failLiveKitCall`
+- `endLiveKitCallV2`
+- `cleanupStaleLiveKitCalls`
+- `cleanupExpiredCallSignals`
+
 Everything else in `functions/src/index.ts` remains undeployed. The enablement
 order and per-batch gates are in [FEATURE-ENABLEMENT](FEATURE-ENABLEMENT.md).
 
 `syncMembershipMirror` is retryable and idempotent. `reconcileMembershipMirrors` runs every 15 minutes. Firestore membership is canonical; the RTDB mirror remains an eventually consistent derivative. Revocation stays fail-closed through the `revoking` state and operation journal.
+
+### RTC V2 and push ownership rollout (2026-08-14)
+
+PR #25 and PR #26 shipped in one rollout. PR #27 first split two phases that
+deadlocked when the two runbook sections were combined; the resulting order is
+in [MIGRATION](MIGRATION.md).
+
+Completed, all runs successful:
+
+1. `push_ownership_backend` — run 31770041190
+2. `rtc_backend` — run 31770272284
+3. `additive_rules` (RTDB rules only) — run 31770483822
+4. `hosting_client` — run 31770722616
+
+The shipped bundle was verified against production: `call.service` carries the
+V2 call callables, `livekit-call-provider` carries `getLiveKitTokenV2`, the push
+chunk carries `claimPushToken`/`releasePushToken`, and the realtime repository
+writes `realtime/presence`.
+
+**Not yet done.** Three items remain and they are blocking, not optional:
+
+- The push adoption gate. `push_sender_backend` and `restrictive_rules` must not
+  run until `pushTokenClaims` shows one owner per token hash, the user mirrors
+  read `ownershipVersion: 1`, and the two-account/two-browser smoke in
+  MIGRATION step 5 has passed.
+- `notifyOnMessage` is still the pre-registry sender and `syncCallSignals` is not
+  deployed, so incoming call ringing does not work yet. This is expected between
+  step 4 and step 6, not a defect to debug.
+- Client writes to `users/{uid}/pushTokens` are still permitted by the live
+  Firestore Rules, and `users/{uid}/incomingCalls` reads are still denied. Both
+  land in `restrictive_rules`, which should follow `push_sender_backend`
+  immediately.
+
+The read-only inventory of legacy `rooms/*/calls` that MIGRATION requires before
+first V2 use was not run; it needs production credentials. Production holds one
+room with three members, so a room carrying ten or more live legacy calls — the
+condition that makes a V2 start fail closed with
+`CALL_INVARIANT_REPAIR_REQUIRED` — is not plausible, but the check is still owed.
 
 ### Rules and Hosting
 
