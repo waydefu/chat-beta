@@ -12,6 +12,8 @@ const VAPID_KEY = import.meta.env.VITE_FCM_VAPID_KEY ?? '';
 let messaging: Messaging | null = null;
 let currentRegistration: { uid: string; token: string; tokenHash: string } | null = null;
 let foregroundUnsub: (() => void) | null = null;
+let foregroundGeneration = 0;
+let tokenMutation: Promise<void> = Promise.resolve();
 
 export interface ForegroundCallNotice {
   roomId: string;
@@ -62,11 +64,12 @@ async function claimBrowserToken(uid: string, token: string): Promise<void> {
     token: string;
     userAgent: string;
     previousTokenHash?: string;
-  }, { tokenHash: string }>('claimPushToken', {
+  }, { tokenHash: string; uid: string }>('claimPushToken', {
     token,
     userAgent: navigator.userAgent.slice(0, 300),
     ...(previousTokenHash ? { previousTokenHash } : {}),
   }, PUSH_CALLABLE_OPTIONS);
+  if (result.uid !== uid) throw new Error('登入狀態已變更，推播將由目前帳號重新註冊。');
   currentRegistration = { uid, token, tokenHash: result.tokenHash };
   localStorage.setItem(PUSH_TOKEN_HASH_KEY, result.tokenHash);
 }
@@ -92,7 +95,13 @@ async function discardBrowserToken(uid: string, token: string): Promise<void> {
   localStorage.removeItem(PUSH_TOKEN_HASH_KEY);
 }
 
-export async function enablePush(uid: string): Promise<string | null> {
+function queueTokenMutation<T>(operation: () => Promise<T>): Promise<T> {
+  const result = tokenMutation.then(operation, operation);
+  tokenMutation = result.then(() => undefined, () => undefined);
+  return result;
+}
+
+async function enablePushNow(uid: string): Promise<string | null> {
   if (!pushConfigured()) return '尚未設定推播金鑰（VITE_FCM_VAPID_KEY）。';
   if (!(await pushSupported())) return '這個瀏覽器不支援網頁推播。iOS 需先把網站加到主畫面。';
   if (Notification.permission === 'denied') return '通知權限已被封鎖，請到瀏覽器網站設定重新允許。';
@@ -113,8 +122,12 @@ export async function enablePush(uid: string): Promise<string | null> {
   }
 }
 
+export function enablePush(uid: string): Promise<string | null> {
+  return queueTokenMutation(() => enablePushNow(uid));
+}
+
 /** Removes both the canonical ownership claim and this browser's FCM token. */
-export async function disablePush(uid: string): Promise<void> {
+async function disablePushNow(uid: string): Promise<void> {
   let token = currentRegistration?.uid === uid ? currentRegistration.token : null;
   if (!token && 'Notification' in window && Notification.permission === 'granted' && await pushSupported()) {
     token = await getBrowserToken();
@@ -130,6 +143,10 @@ export async function disablePush(uid: string): Promise<void> {
   }
 }
 
+export function disablePush(uid: string): Promise<void> {
+  return queueTokenMutation(() => disablePushNow(uid));
+}
+
 export async function releasePushForLogout(uid: string): Promise<void> {
   await disablePush(uid);
 }
@@ -139,11 +156,12 @@ export function watchForegroundPush(
   onCall?: (notice: ForegroundCallNotice) => void,
 ): void {
   if (!pushConfigured()) return;
+  const generation = ++foregroundGeneration;
   void pushSupported().then(async (supported) => {
-    if (!supported) return;
+    if (!supported || generation !== foregroundGeneration) return;
     foregroundUnsub?.();
     const { onMessage } = await import('firebase/messaging');
-    foregroundUnsub = onMessage(await ensureMessaging(), (payload) => {
+    const unsubscribe = onMessage(await ensureMessaging(), (payload) => {
       if (payload.data?.type === 'call' && payload.data.roomId && payload.data.callId) {
         onCall?.({
           roomId: payload.data.roomId,
@@ -158,10 +176,16 @@ export function watchForegroundPush(
         body: payload.notification?.body ?? payload.data?.body ?? '',
       });
     });
+    if (generation !== foregroundGeneration) {
+      unsubscribe();
+      return;
+    }
+    foregroundUnsub = unsubscribe;
   });
 }
 
 export function stopForegroundPush(): void {
+  foregroundGeneration += 1;
   foregroundUnsub?.();
   foregroundUnsub = null;
 }

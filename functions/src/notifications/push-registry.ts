@@ -97,7 +97,7 @@ export const claimPushToken = onCall(callableOptions(), async (request) => {
   logger.info('Push token claim complete', {
     operation: 'push.token.claim', result: 'complete', replacedOwner, durationMs: Date.now() - startedAt,
   });
-  return { tokenHash: hash };
+  return { tokenHash: hash, uid };
 });
 
 export const releasePushToken = onCall(callableOptions(), async (request) => {

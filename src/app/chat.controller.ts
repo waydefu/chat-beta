@@ -146,6 +146,7 @@ let mentionIndex = 0;
 let mediaController: MediaUploadController | null = null;
 let callController: CallUIController | null = null;
 let voiceController: VoiceMessageController | null = null;
+let pushConfiguration: Promise<void> | null = null;
 const localAiRuns = new Set<string>();
 
 function errorText(error: unknown): string {
@@ -1091,9 +1092,10 @@ async function runHistoricalSearch(): Promise<void> {
   }
 }
 
-async function configurePush(uid: string): Promise<void> {
+async function configurePush(uid: string, scope: SessionScope): Promise<void> {
   const { configuredPushState } = await import('../notifications/push');
   const state = await configuredPushState(uid);
+  if (scope.signal.aborted || scope !== sessionScope || user?.uid !== uid) return;
   ui.pushRow.hidden = !state.supported;
   ui.push.checked = state.enabled;
   if (state.error) toast(state.error, 'error');
@@ -1151,7 +1153,13 @@ function beginSession(nextUser: AuthenticatedUser): void {
     },
     (notice) => toast(`${notice.kind === 'video' ? '視訊' : '語音'}來電`),
   ));
-  void configurePush(nextUser.uid);
+  const configuringPush = configurePush(nextUser.uid, scope);
+  pushConfiguration = configuringPush;
+  void configuringPush.catch((error) => {
+    if (!scope.signal.aborted) toast(`推播初始化失敗：${errorText(error)}`, 'error');
+  }).finally(() => {
+    if (pushConfiguration === configuringPush) pushConfiguration = null;
+  });
 }
 
 function bindEvents(): void {
@@ -1214,10 +1222,13 @@ function bindEvents(): void {
   });
   watchSystemTheme(setTheme);
   ui.push.addEventListener('change', () => {
-    if (!user) return;
+    const currentUser = user;
+    const currentScope = sessionScope;
+    if (!currentUser || !currentScope) return;
     void (async () => {
       const { PUSH_PREFERENCE_KEY, setPushPreference } = await import('../notifications/push');
-      const error = await setPushPreference(user!.uid, ui.push.checked);
+      const error = await setPushPreference(currentUser.uid, ui.push.checked);
+      if (currentScope.signal.aborted || user !== currentUser) return;
       if (error) {
         ui.push.checked = localStorage.getItem(PUSH_PREFERENCE_KEY) === 'true';
         toast(error, 'error');
@@ -1288,6 +1299,7 @@ export function initializeChatController(): ChatController {
     async prepareLogout() {
       const currentUser = user;
       if (!currentUser) return;
+      await pushConfiguration?.catch(() => undefined);
       const { releasePushForLogout } = await import('../notifications/push');
       await releasePushForLogout(currentUser.uid);
     },
