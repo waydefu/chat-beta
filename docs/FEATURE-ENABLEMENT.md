@@ -1,6 +1,6 @@
 # 剩餘功能啟用 runbook
 
-Last updated: 2026-08-13 (Asia/Taipei)
+Last updated: 2026-08-14 (Asia/Taipei)
 
 這份文件接在 [HANDOFF](HANDOFF.md) 之後。HANDOFF 記錄 3.0 rollout 完成後的 production 狀態，這份記錄「還沒開的功能要怎麼開」。接手的人請先讀 HANDOFF 的〈Provider integrations not yet production-ready〉，再讀這裡。
 
@@ -8,11 +8,11 @@ Last updated: 2026-08-13 (Asia/Taipei)
 
 ## 0. 現況
 
-### 已上線的 Functions（asia-east1，Node.js 22，gen2）
+### Production Functions（asia-east1，Node.js 22，gen2）
 
-`createDirectRoom`、`createOrJoinPublicRoom`、`revokeRoomMember`、`syncMembershipMirror`、`reconcileMembershipMirrors`。
+[HANDOFF](HANDOFF.md) 保存最後一次已驗證的部署 snapshot；每次 rollout 前仍必須以 `firebase functions:list --project f-chat-wayde-fu` 取得 fresh inventory。不要用這份 runbook 推測 production 已部署哪一支 Function。
 
-以上是 production 唯一在跑的 Functions。**其餘 17 支雖然程式碼完整、測試通過、也在 client bundle 的呼叫路徑上，但從未部署過。**
+RTC correctness PR 會增加 V2 start/token/end與七支 callable/trigger/scheduler；在該 PR合併並完成 [MIGRATION](MIGRATION.md) 的順序前，production仍只有舊版 start/token/end RTC contract。新版 Hosting client不得先行。
 
 ### 未部署的 Functions 與其依賴
 
@@ -20,7 +20,7 @@ Last updated: 2026-08-13 (Asia/Taipei)
 | --- | --- | --- |
 | `notifyOnMessage` | 無 | FCM 推播（新訊息通知） |
 | `sendStickerMessage` | 無 | 內建貼圖 |
-| `startLiveKitCall`／`getLiveKitToken`／`endLiveKitCall` | `LIVEKIT_URL`、`LIVEKIT_API_KEY`、`LIVEKIT_API_SECRET` | 語音／視訊通話、螢幕分享 |
+| RTC lifecycle／signaling／cleanup（見 [RTC](RTC.md)） | `LIVEKIT_URL`、`LIVEKIT_API_KEY`、`LIVEKIT_API_SECRET` | 語音／視訊、正式來電、single-call lock、recovery |
 | `requestUpload`／`finalizeUpload`／`getAttachmentDownloadUrl`／`cleanupExpiredUploads`／`cleanupOrphanR2Objects` | `R2_ACCOUNT_ID`、`R2_ACCESS_KEY_ID`、`R2_SECRET_ACCESS_KEY`、`R2_BUCKET` | 檔案附件、語音訊息 |
 | `requestCustomStickerUpload`／`finalizeCustomStickerUpload`／`getCustomStickerDownloadUrl`／`deleteCustomSticker`／`cleanupExpiredCustomStickerUploads` | 同上 R2 | 自訂貼圖 |
 | `generateGeminiReply`／`cleanupExpiredAIDrafts` | `GEMINI_API_KEY`（cleanup 本身不需要） | AI 回覆與草稿 |
@@ -34,11 +34,11 @@ grep -rn "secrets:" functions/src
 
 ### Secret Manager 現況
 
-上表所有 secret 在 Secret Manager 都只有 `UNCONFIGURED` 佔位版本。那是當初為了通過 additive 部署提示而建立的，**不是有效憑證**。用佔位值部署 provider Functions 會部署成功但 runtime 必定失敗。
+Secret 的值與版本狀態不進 Git；不能沿用舊文件中的 `UNCONFIGURED` 推測。每個 provider phase 都要由 operator 確認目前 active version、在 protected staging 做 runtime smoke，且不得把 `functions:secrets:access` 的內容貼到 log、PR 或聊天。
 
 ### client 端現況
 
-所有功能的 UI 都已經在 bundle 裡，而且會走真實呼叫路徑。也就是說：**使用者現在按下這些按鈕，得到的是呼叫失敗，不是「功能未開放」的提示。** 這件事會影響啟用順序——每開一批，就少一組會壞的按鈕。
+Client 有些功能會走真實 callable；是否 production-ready 以 fresh Functions inventory、provider smoke 與 feature-specific gate 三者共同決定。未部署 backend 的 UI 必須在後續 feature-flag/debt PR fail closed，不能把 callable 失敗當功能開關。
 
 ## 1. 啟用順序
 
@@ -63,7 +63,7 @@ grep -rn "secrets:" functions/src
 | 階段 | 部署內容 | gate |
 | --- | --- | --- |
 | `notification_backend` | `notifyOnMessage`、`sendStickerMessage` | 只檢查 `migration_verified` |
-| `rtc_backend` | `startLiveKitCall`、`getLiveKitToken`、`endLiveKitCall` | `migration_verified` 與 `providers_verified` |
+| `rtc_backend` | RTC V2 start/token/end、confirm/respond/heartbeat/fail、signal sync、兩支 cleanup | `migration_verified` 與 `providers_verified` |
 | `ai_backend` | `generateGeminiReply`、`cleanupExpiredAIDrafts` | `migration_verified` 與 `providers_verified` |
 
 `notification_backend` 不設 provider gate，因為那兩支沒有任何 secret 宣告。理由與 PR #13 把 `hosting_client` 的 gate 拿掉一樣：不要求一個無法照實回答的聲明。
@@ -72,9 +72,7 @@ grep -rn "secrets:" functions/src
 
 ### 2.2 補部署角色
 
-`github-deploy@f-chat-wayde-fu.iam.gserviceaccount.com` 目前只有 `firebasehosting.admin` 與 `serviceusage.serviceUsageConsumer`。先授予 [WIF-SETUP](WIF-SETUP.md) §6 的第二批（`firebaserules.admin`、`firebasedatabase.admin`、`cloudfunctions.developer`、`iam.serviceAccountUser`、`artifactregistry.writer`）。
-
-這一批一定不夠。gen2 Functions 實際部署還會要求下列其中幾項。**照 WIF-SETUP 的原則辦：讓它失敗、讀錯誤訊息指名的權限、只補那一項，不要預先全給。**
+部署角色會隨 trigger 類型改變，現況以 IAM inventory 與 [HANDOFF](HANDOFF.md) 為準。gen2 Functions 實際部署會要求下列其中幾項。**照 WIF-SETUP 的原則辦：讀錯誤訊息指名的權限、只補那一項，不要預先全給，也不要改用個人帳號繞過 WIF。**
 
 | 角色 | 什麼時候會需要 |
 | --- | --- |
@@ -120,9 +118,11 @@ firebase functions:delete notifyOnMessage --project f-chat-wayde-fu --region asi
 
 ## 4. 批次 B：通話（LiveKit）
 
-### 4.1 程式碼不需要改
+### 4.1 Repository rollout scope
 
-三支 Functions 在 [functions/src/calls/livekit.ts](../functions/src/calls/livekit.ts)：token 已綁 uid、LiveKit room、publish source，TTL 寫死 10 分鐘。client 在 [src/calls/](../src/calls/)，`livekit-client` 是動態 import，不進首屏 chunk。Firestore rules 的 `rooms/{roomId}/calls/{callId}` 已是成員可讀、只有 Functions 能寫。這批要動的只有設定與部署。
+RTC 現在不是三支 callable，而是完整 lifecycle/signaling/cleanup機隊。新 client呼叫 `startLiveKitCallV2`／`getLiveKitTokenV2`／`endLiveKitCallV2`，避免 additive backend階段破壞仍開著的舊頁面。狀態機與 invariant見 [RTC](RTC.md)；資料與 additive migration見 [MIGRATION](MIGRATION.md)。`livekit-client`仍是動態 import，不進首屏 chunk；Firestore calls/incoming signals都是 server-only write。
+
+這次變更需要先部署 index、Eventarc trigger 與 Cloud Scheduler Functions，再部署 additive Rules，最後才部署 Hosting client。不能只覆蓋舊三支 Function 後直接上新版 client。
 
 ### 4.2 建立 LiveKit Cloud 專案
 
@@ -178,11 +178,13 @@ gh workflow run "Deploy Firebase production" --repo waydefu/chat-beta -f rollout
 2. A 看到「語音通話已開始」的 toast，兩邊訊息列都出現「開始了一通電話」的系統訊息。
 3. B 點該系統訊息加入，雙向可通話。
 4. DevTools Console 沒有任何 CSP 違規。
-5. Network 面板確認 `getLiveKitToken` 回傳 `expiresIn: 600`。
-6. A 按 ■ 結束，Firestore `rooms/{roomId}/calls/{callId}.status` 變 `ended`。
+5. Network 面板確認 `getLiveKitTokenV2` 回傳 `expiresIn: 600`。
+6. A 掛斷，Firestore `rooms/{roomId}/calls/{callId}.status` 變 `ended`，且 room `activeCallId` 被清除；重送 end 結果不變。
 7. 非發起者且非 owner／admin 的成員呼叫結束，應得到 `permission-denied`。
 8. 視訊（▣）與螢幕分享各測一次。
-9. 通話結束後，DOM 不應殘留 `[data-chat-lite-call-audio]` 或 `.call-stage`。
+9. 通話結束後，DOM 不應殘留 `[data-chat-lite-call-audio]` 或 `.call-video`。
+10. 同房兩人同時 start、double click、media permission denial、關頁與斷網 recovery 都要驗證；不能只測 happy path。
+11. 背景分頁收到獨立 `type=call` 通知，foreground 收到 per-user incoming signal；普通 chat notification 不應代替 signaling。
 
 ### 4.7 上線前的非技術前置
 
@@ -190,15 +192,15 @@ gh workflow run "Deploy Firebase production" --repo waydefu/chat-beta -f rollout
 
 ### 4.8 App Check
 
-`APP_CHECK_ENFORCED_FEATURES` 目前是空字串，代表 `rtc` 沒有強制。client 呼叫時已帶 `limitedUseAppCheckTokens: true`，token 有在送、metrics 收得到。等 metrics 顯示合法流量穩定之後再把 `rtc` 加進去，一次只加一個 surface。
+先查 production `APP_CHECK_ENFORCED_FEATURES`，不要依文件猜值。client 對所有 RTC callable 都帶 `limitedUseAppCheckTokens: true`；backend 在 `rtc` enforce 時全部 consume。等 metrics 顯示合法流量穩定之後再加 `rtc`，一次只加一個 surface。
 
 ### 4.9 回滾
 
 ```bash
-firebase functions:delete startLiveKitCall getLiveKitToken endLiveKitCall --project f-chat-wayde-fu --region asia-east1
+firebase functions:delete startLiveKitCallV2 getLiveKitTokenV2 confirmLiveKitCall respondLiveKitCall heartbeatLiveKitCall failLiveKitCall endLiveKitCallV2 cleanupStaleLiveKitCalls syncCallSignals cleanupExpiredCallSignals --project f-chat-wayde-fu --region asia-east1
 ```
 
-已結束的通話會在 Firestore 留下 `calls` 文件與 `kind: 'call'` 的系統訊息。那些是歷史紀錄，不要刪。
+先 rollback Hosting 到前一個 release，再刪新增 Functions；保留舊 `startLiveKitCall`／`getLiveKitToken`／`endLiveKitCall` 才能服務舊 client。已結束的 calls、system messages 與未過期 incoming signals 是 recovery/history，不要在 rollback 當場手動刪除。
 
 ## 5. 批次 C／D／E
 

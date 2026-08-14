@@ -1,7 +1,69 @@
 # RTC
 
-`CallProvider` 隔離 LiveKit。`startLiveKitCall` 先驗證 active membership，建立 Firestore call lifecycle 與 system call message；`getLiveKitToken` 再確認 call 仍為 active，簽發 10 分鐘 JWT，identity 綁 Firebase uid、LiveKit room、publish source 與 subscribe grant。
+RTC 使用 Firestore 做 server-authoritative signaling 與 recovery，LiveKit 只保存即時 participant／track 狀態。`CallProvider` 隔離 LiveKit；client 動態載入 `livekit-client`，不進首屏 chunk。
 
-Firestore 只保存 started/ended lifecycle 與 history。participant、track、speaker、network quality 不鏡射到 Firestore/RTDB。交付順序是 1:1 voice、1:1 video、group、screen share；每一階段都在受保護 staging 使用真實 LiveKit Cloud smoke test。
+## Call state machine
 
-client 動態載入 `livekit-client`，因此 RTC 不進首屏 chunk。中止 RoomScope 會斷線並移除已 attach 的 remote audio element。
+```text
+creating -> ringing -> active -> ending -> ended
+    |          |          |          |
+    +----------+----------+----------+-> failed / missed / cancelled / rejected
+```
+
+- `creating`：server 已取得 room lock，但 caller 尚未完成 token、LiveKit connect 與 media setup。
+- `ringing`：caller 已連線並呼叫 `confirmLiveKitCall`，此時才建立 system call message 與 incoming signals。
+- `active`：至少一位非 caller 成員已連線並確認。
+- `ending`：結束操作的 durable intermediate state。
+- terminal states：`ended`、`failed`、`rejected`、`missed`、`cancelled`。
+
+Timer 從 client 實際連線且看到 remote participant 時開始，不從 panel constructor 或 `creating` 開始。
+
+## Server invariants
+
+`rooms/{roomId}.activeCallId` 是 room-level lock。`startLiveKitCallV2` 在 Firestore transaction 中同時檢查 lock 與 call operation：
+
+- caller 產生 UUID operation ID；重送相同 operation 只會 resume 同一 call。
+- 同房另一個 operation、double click 或 network duplicate 會得到 `CALL_ALREADY_ACTIVE`。
+- transition 與 room pointer 在同一 transaction 寫入。
+- legacy call 沒有 room pointer 時，start 會做 bounded fallback scan；fresh call 會阻擋新 call，stale call 會被 terminalize。超過修復上限時 fail closed，交由 cleanup 處理。
+- 所有 live state 帶 `leaseExpiresAt`。caller 每 45 秒 heartbeat；`cleanupStaleLiveKitCalls` 每 5 分鐘 bounded cleanup，回收 crash、關頁或斷網留下的 lock。
+- `endLiveKitCallV2` 可重入；pre-active 結束保存為 `cancelled`，active 結束保存為 `ended`。
+- connection rollback 使用 `failLiveKitCall`；rollback 失敗不會覆蓋使用者看到的 primary connection error。
+
+## Callables and triggers
+
+| Backend | Responsibility |
+| --- | --- |
+| `startLiveKitCallV2` | idempotent intent + single-room lock |
+| `getLiveKitTokenV2` | membership、lease、joinable state 與 publish-source grant |
+| `confirmLiveKitCall` | caller `creating -> ringing`；callee `ringing -> active` |
+| `respondLiveKitCall` | accepted／rejected durable response |
+| `heartbeatLiveKitCall` | caller lease renewal |
+| `failLiveKitCall` | failed connection rollback |
+| `endLiveKitCallV2` | idempotent ending + terminal state + lock release |
+| `syncCallSignals` | per-user incoming signal 與獨立 call push payload |
+| `cleanupStaleLiveKitCalls` | bounded stale lifecycle recovery |
+| `cleanupExpiredCallSignals` | bounded per-user signal retention |
+
+V2 名稱是 rollout boundary：production舊三支 `startLiveKitCall`／`getLiveKitToken`／`endLiveKitCall` 在 Hosting切換前保持原樣；新版 client只呼叫 V2。舊 active call有四小時 migration grace，期間會阻擋同房 V2 start；過期後 cleanup回收。觀察期後明確刪除舊三支，repo不保留 legacy implementation或 dual-read。每支 replay-sensitive RTC callable都使用相同 `rtc` App Check gate；client每次都傳 `limitedUseAppCheckTokens: true`。不得只對 start或 token啟用。
+
+## Incoming signaling
+
+真正來電位於 `users/{uid}/incomingCalls/{callId}`，不是從聊天 system message 推論。只有收件者可讀、client 不可寫；Functions 根據 active room membership 建立 signal。FCM data payload 使用 `type=call`，service worker 以不同 tag、TTL、action 與普通聊天通知分流。
+
+`syncCallSignals` 的文件建立是 create-if-missing，避免 trigger retry 把 `accepted`／`rejected` 蓋回 `ringing`。推播使用 durable claim 提供 at-most-once dispatch；claim 前 incoming signal 已落盤，因此 crash 時仍可由 foreground listener 收到。FCM 本身沒有跨 request idempotency key，這是刻意選擇 durable signal correctness 優先於重複 push。
+
+## Client lifecycle
+
+- provisional call state 在 provider join 前建立，所以 initial participant callback 不會早於 controller adoption。
+- call 與 global presence 由 `SessionScope` 擁有；切換 room 不會掛斷或把本人設為 offline。
+- LiveKit listeners、attached audio/video elements、tracks 與 AbortSignal 都由 session cleanup。
+- reconnect 顯示明確 phase；provider terminal disconnect 會嘗試 end，server lease 是最後 recovery line。
+- 語音通話不顯示 camera control；不支援 `getDisplayMedia` 時不顯示 screen-share control。
+- desktop 是可拖動 compact panel；mobile 是 safe-area aware active screen，可縮成 call bar；incoming call 是 focus-contained bottom sheet。
+
+## Staging smoke gate
+
+正式部署前在受保護 staging 使用兩個真實帳號測：concurrent start、double click、caller media denial、callee join、remote already present、remote late join、reconnect、tab close、network loss、idempotent end、voice/video/screen share、320/390px mobile、App Check enforcement。確認 DOM 無殘留 call audio/video、Firestore 無永久 live call、Cloud Logging 不含 token 或完整聊天內容。
+
+部署順序與 rollback 見 [MIGRATION](MIGRATION.md) 及 [FEATURE-ENABLEMENT](FEATURE-ENABLEMENT.md)。

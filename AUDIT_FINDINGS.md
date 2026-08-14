@@ -1,7 +1,8 @@
 # Repository audit findings
 
-Audit date: 2026-08-14 (Asia/Taipei)  
-Baseline: `origin/main` at `fbe768d`  
+Audit date: 2026-08-14 (Asia/Taipei)
+
+Baseline: `origin/main` at `fbe768d`
 Working branch: `agent/rtc-presence-correctness`
 
 ## Scope and method
