@@ -8,7 +8,8 @@ import { appCheckEnforced, geminiApiKey, REGION } from '../config.js';
 import { requireAuth, requireRecord, requireString, roomKey } from '../shared/validation.js';
 import { buildBotContext } from './context-builder.js';
 import { BotPermissionService, BotRateLimiter, BotRegistry, BotRouter } from './framework.js';
-import { aiErrorMessage, classifyProviderError, safeErrorFields, type AiErrorCode } from './ai-errors.js';
+import { geminiCountTokensConfig, geminiGenerationConfig } from './gemini-request-config.js';
+import { aiErrorMessage, classifyProviderError, type AiErrorCode } from './ai-errors.js';
 import { stableGeminiModel } from './model-config.js';
 
 const BOT_ID = 'gemini';
@@ -22,6 +23,31 @@ const botRegistry = new BotRegistry([{ id: BOT_ID, displayName: BOT_NAME, provid
 const botRouter = new BotRouter(botRegistry);
 const botPermissions = new BotPermissionService();
 const botRateLimiter = new BotRateLimiter();
+
+type AiGeneratePhase = 'accepted' | 'preflight_failed' | 'lease_acquired' | 'provider_started' | 'complete' | 'failed';
+
+interface AiGenerateLogFields {
+  result: string;
+  model?: string;
+  modelSource?: string;
+  errorCategory?: string;
+  latencyMs: number;
+  acceptsStreaming: boolean;
+  authPresent: boolean;
+  appCheckPresent: boolean;
+}
+
+function logAiGenerate(
+  level: 'info' | 'error',
+  phase: AiGeneratePhase,
+  fields: AiGenerateLogFields,
+): void {
+  logger[level](`ai.generate.${phase}`, {
+    operation: 'ai.generate',
+    phase,
+    ...fields,
+  });
+}
 
 function runIdFor(sourceMessageId: string): string {
   return `${sourceMessageId}_${BOT_ID}`;
@@ -47,6 +73,18 @@ function domainCodeOf(error: unknown, aborted: boolean): AiErrorCode {
   return classifyProviderError(error, aborted);
 }
 
+function preflightErrorCategory(error: unknown): string {
+  if (!(error instanceof HttpsError)) return 'AI_UNKNOWN';
+  const declared = (error.details as { code?: unknown } | undefined)?.code;
+  if (typeof declared === 'string') return declared;
+  if (error.code === 'unauthenticated') return 'AUTH_REQUIRED';
+  if (error.code === 'permission-denied') return 'AI_PERMISSION_DENIED';
+  if (error.code === 'invalid-argument') return 'INVALID_REQUEST';
+  if (error.code === 'already-exists') return 'AI_ALREADY_RUNNING';
+  if (error.code === 'resource-exhausted') return 'AI_RATE_LIMITED';
+  return 'AI_UNKNOWN';
+}
+
 export const generateGeminiReply = onCall(
   {
     region: REGION,
@@ -57,43 +95,92 @@ export const generateGeminiReply = onCall(
     memory: '1GiB',
   },
   async (request, response) => {
-    const auth = requireAuth(request);
-    const data = requireRecord(request.data);
-    const roomId = requireString(data.roomId, 'roomId', 50);
-    const sourceMessageId = requireString(data.sourceMessageId, 'sourceMessageId', 150);
-    const requestedBot = botRouter.require(requireString(data.botId, 'botId', 80));
-    if (requestedBot.id !== BOT_ID) throw new HttpsError('invalid-argument', '此 provider 無法處理指定的機器人。');
-    await botPermissions.requireInvocation(roomId, auth.uid);
-    const runId = runIdFor(sourceMessageId);
-    const requestRef = firestore.doc(`rooms/${roomId}/aiRequests/${runId}`);
-    const messageRef = firestore.doc(`rooms/${roomId}/messages/ai_${runId}`);
-    const now = Date.now();
-    const modelChoice = await stableGeminiModel(now);
-    const configuredModel = modelChoice.model;
-    const lease = await firestore.runTransaction(async (transaction) => {
-      const snapshot = await transaction.get(requestRef);
-      const existing = snapshot.data();
-      if (existing?.status === 'complete') {
-        return { alreadyComplete: true, attempt: Number(existing.attempt || 1), model: String(existing.model || configuredModel) };
-      }
-      if (existing?.status === 'running' && existing.leaseExpiresAt?.toMillis?.() > now) {
-        throw new HttpsError('already-exists', aiErrorMessage('AI_ALREADY_RUNNING'), { code: 'AI_ALREADY_RUNNING' });
-      }
-      const attempt = Number(existing?.attempt || 0) + 1;
-      transaction.set(requestRef, {
-        sourceMessageId,
-        botId: BOT_ID,
-        requesterId: auth.uid,
-        status: 'running',
-        attempt,
-        model: configuredModel,
-        leaseExpiresAt: Timestamp.fromMillis(now + LEASE_MS),
-        startedAt: FieldValue.serverTimestamp(),
-        updatedAt: FieldValue.serverTimestamp(),
-      }, { merge: true });
-      return { alreadyComplete: false, attempt, model: configuredModel };
+    const handlerStartedAt = Date.now();
+    const logContext = {
+      acceptsStreaming: request.acceptsStreaming,
+      authPresent: Boolean(request.auth),
+      appCheckPresent: Boolean(request.app),
+    };
+    let preflightModel: string | undefined;
+    let preflightModelSource: string | undefined;
+
+    logAiGenerate('info', 'accepted', {
+      result: 'accepted',
+      latencyMs: 0,
+      ...logContext,
     });
+
+    const preflight = await (async () => {
+      try {
+        const auth = requireAuth(request);
+        const data = requireRecord(request.data);
+        const roomId = requireString(data.roomId, 'roomId', 50);
+        const sourceMessageId = requireString(data.sourceMessageId, 'sourceMessageId', 150);
+        const requestedBot = botRouter.require(requireString(data.botId, 'botId', 80));
+        if (requestedBot.id !== BOT_ID) throw new HttpsError('invalid-argument', '此 provider 無法處理指定的機器人。');
+        await botPermissions.requireInvocation(roomId, auth.uid);
+        const runId = runIdFor(sourceMessageId);
+        const requestRef = firestore.doc(`rooms/${roomId}/aiRequests/${runId}`);
+        const messageRef = firestore.doc(`rooms/${roomId}/messages/ai_${runId}`);
+        const now = Date.now();
+        const modelChoice = await stableGeminiModel(now);
+        const configuredModel = modelChoice.model;
+        preflightModel = configuredModel;
+        preflightModelSource = modelChoice.source;
+        const lease = await firestore.runTransaction(async (transaction) => {
+          const snapshot = await transaction.get(requestRef);
+          const existing = snapshot.data();
+          if (existing?.status === 'complete') {
+            return { alreadyComplete: true, attempt: Number(existing.attempt || 1), model: String(existing.model || configuredModel) };
+          }
+          if (existing?.status === 'running' && existing.leaseExpiresAt?.toMillis?.() > now) {
+            throw new HttpsError('already-exists', aiErrorMessage('AI_ALREADY_RUNNING'), { code: 'AI_ALREADY_RUNNING' });
+          }
+          const attempt = Number(existing?.attempt || 0) + 1;
+          transaction.set(requestRef, {
+            sourceMessageId,
+            botId: BOT_ID,
+            requesterId: auth.uid,
+            status: 'running',
+            attempt,
+            model: configuredModel,
+            leaseExpiresAt: Timestamp.fromMillis(now + LEASE_MS),
+            startedAt: FieldValue.serverTimestamp(),
+            updatedAt: FieldValue.serverTimestamp(),
+          }, { merge: true });
+          return { alreadyComplete: false, attempt, model: configuredModel };
+        });
+        logAiGenerate('info', 'lease_acquired', {
+          result: lease.alreadyComplete ? 'replayed' : 'acquired',
+          model: lease.model,
+          modelSource: modelChoice.source,
+          latencyMs: Date.now() - handlerStartedAt,
+          ...logContext,
+        });
+        return { auth, roomId, sourceMessageId, runId, requestRef, messageRef, modelChoice, lease };
+      } catch (error) {
+        const errorCategory = preflightErrorCategory(error);
+        logAiGenerate('error', 'preflight_failed', {
+          result: 'failed',
+          ...(preflightModel ? { model: preflightModel } : {}),
+          ...(preflightModelSource ? { modelSource: preflightModelSource } : {}),
+          errorCategory,
+          latencyMs: Date.now() - handlerStartedAt,
+          ...logContext,
+        });
+        if (error instanceof HttpsError) throw error;
+        throw new HttpsError('unavailable', aiErrorMessage('AI_UNKNOWN'), { code: errorCategory });
+      }
+    })();
+    const { auth, roomId, sourceMessageId, runId, requestRef, messageRef, modelChoice, lease } = preflight;
     if (lease.alreadyComplete) {
+      logAiGenerate('info', 'complete', {
+        result: 'replayed',
+        model: lease.model,
+        modelSource: modelChoice.source,
+        latencyMs: Date.now() - handlerStartedAt,
+        ...logContext,
+      });
       return { runId, finalMessageId: messageRef.id, model: lease.model, replayed: true };
     }
 
@@ -113,10 +200,17 @@ export const generateGeminiReply = onCall(
       const botContext = await buildBotContext(roomId, sourceMessageId, BOT_ID, auth.uid);
       const ai = new GoogleGenAI({ apiKey: geminiApiKey.value() });
       let contents = generationContents(botContext.context, botContext.prompt);
+      logAiGenerate('info', 'provider_started', {
+        result: 'started',
+        model: lease.model,
+        modelSource: modelChoice.source,
+        latencyMs: Date.now() - handlerStartedAt,
+        ...logContext,
+      });
       let tokenCount = await ai.models.countTokens({
         model: lease.model,
         contents,
-        config: { systemInstruction: SYSTEM_INSTRUCTION, abortSignal: abortController.signal },
+        config: geminiCountTokensConfig(abortController.signal),
       });
       while ((tokenCount.totalTokens ?? 0) > INPUT_TOKEN_BUDGET && botContext.context.length > 0) {
         botContext.context.splice(0, Math.max(1, Math.ceil(botContext.context.length / 10)));
@@ -124,7 +218,7 @@ export const generateGeminiReply = onCall(
         tokenCount = await ai.models.countTokens({
           model: lease.model,
           contents,
-          config: { systemInstruction: SYSTEM_INSTRUCTION, abortSignal: abortController.signal },
+          config: geminiCountTokensConfig(abortController.signal),
         });
       }
       if ((tokenCount.totalTokens ?? 0) > INPUT_TOKEN_BUDGET) {
@@ -133,11 +227,7 @@ export const generateGeminiReply = onCall(
       const stream = await ai.models.generateContentStream({
         model: lease.model,
         contents,
-        config: {
-          abortSignal: abortController.signal,
-          systemInstruction: SYSTEM_INSTRUCTION,
-          maxOutputTokens: 2048,
-        },
+        config: geminiGenerationConfig(abortController.signal, SYSTEM_INSTRUCTION, 2048),
       });
 
       for await (const chunk of stream) {
@@ -212,16 +302,12 @@ export const generateGeminiReply = onCall(
         updatedAt: Date.now(),
         expiresAt: Date.now() + 30_000,
       }).catch(() => undefined);
-      logger.info('Gemini generation complete', {
-        operation: 'ai.generate',
+      logAiGenerate('info', 'complete', {
         result: 'complete',
-        runId,
-        roomId,
         model: lease.model,
         modelSource: modelChoice.source,
-        attempt: lease.attempt,
-        latencyMs: Date.now() - started,
-        ...(usage ? { usage } : {}),
+        latencyMs: Date.now() - handlerStartedAt,
+        ...logContext,
       });
       return { runId, finalMessageId: messageRef.id, model: lease.model, replayed: false };
     } catch (error) {
@@ -242,17 +328,13 @@ export const generateGeminiReply = onCall(
         updatedAt: FieldValue.serverTimestamp(),
         leaseExpiresAt: FieldValue.delete(),
       }, { merge: true });
-      logger.error('Gemini generation failed', {
-        operation: 'ai.generate',
+      logAiGenerate('error', 'failed', {
         result: status,
-        runId,
-        roomId,
         model: lease.model,
         modelSource: modelChoice.source,
-        attempt: lease.attempt,
         errorCategory: domainCode,
-        latencyMs: Date.now() - started,
-        ...safeErrorFields(error),
+        latencyMs: Date.now() - handlerStartedAt,
+        ...logContext,
       });
       // Never re-throw the provider error: its message and details quote the
       // request, which is the user's chat content.
