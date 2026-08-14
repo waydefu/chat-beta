@@ -2,7 +2,7 @@ import { defineSecret } from 'firebase-functions/params';
 
 export const REGION = 'asia-east1';
 
-export type AppCheckFeature = 'membership' | 'ai' | 'media' | 'rtc' | 'search' | 'stickers';
+export type AppCheckFeature = 'membership' | 'ai' | 'media' | 'notifications' | 'rtc' | 'search' | 'stickers';
 
 export function appCheckEnforced(feature: AppCheckFeature): boolean {
   return new Set((process.env.APP_CHECK_ENFORCED_FEATURES || '')

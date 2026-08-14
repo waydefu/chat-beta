@@ -209,12 +209,7 @@ service cloud.firestore {
 
       match /pushTokens/{tokenId} {
         allow read: if signedIn() && request.auth.uid == userId;
-        allow create, update: if signedIn() && request.auth.uid == userId
-          && request.resource.data.keys().hasOnly(['token', 'updatedAt', 'userAgent'])
-          && validText(request.resource.data.token, 500)
-          && request.resource.data.updatedAt == request.time
-          && optionalString(request.resource.data, 'userAgent', 300);
-        allow delete: if signedIn() && request.auth.uid == userId;
+        allow write: if false;
       }
 
       match /incomingCalls/{callId} {
@@ -243,6 +238,10 @@ service cloud.firestore {
         allow read: if signedIn() && request.auth.uid == userId;
         allow write: if false;
       }
+    }
+
+    match /pushTokenClaims/{tokenHash} {
+      allow read, write: if false;
     }
 
     match /bots/{botId} {
