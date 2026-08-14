@@ -2,7 +2,7 @@
 
 Last updated: 2026-08-14 (Asia/Taipei)
 
-這份文件接在 [HANDOFF](HANDOFF.md) 之後。HANDOFF 記錄 3.0 rollout 完成後的 production 狀態，這份記錄「還沒開的功能要怎麼開」。接手的人請先讀 HANDOFF 的〈Provider integrations not yet production-ready〉，再讀這裡。
+這份文件接在 [HANDOFF](HANDOFF.md) 之後。HANDOFF 記錄 3.0 rollout 完成後的 production 狀態，這份記錄「還沒開的功能要怎麼開」。接手的人請先讀 HANDOFF 的〈Provider integrations〉，再讀這裡。
 
 規則不變：不要把任何 secret 值、user ID、production 房間名稱或訊息內容寫進這個 repo。
 
@@ -14,6 +14,14 @@ Last updated: 2026-08-14 (Asia/Taipei)
 
 RTC correctness PR 會增加 V2 start/token/end與七支 callable/trigger/scheduler；在該 PR合併並完成 [MIGRATION](MIGRATION.md) 的順序前，production仍只有舊版 start/token/end RTC contract。新版 Hosting client不得先行。
 
+### 已上線 Functions
+
+| Function | 部署時間 | 功能 |
+| --- | --- | --- |
+| `generateGeminiReply`／`cleanupExpiredAIDrafts` | 2026-08-14，GitHub Actions run 31798296940 | Gemini AI 回覆、串流草稿與過期草稿清理 |
+
+Gemini callable 的無內容健康檢查已到達端點；仍須依第 7.5 節在真實房間驗證串流、取消、用量 metadata 與錯誤情境。
+
 ### 未部署的 Functions 與其依賴
 
 | Function | 需要的 secret | 解鎖的功能 |
@@ -23,7 +31,6 @@ RTC correctness PR 會增加 V2 start/token/end與七支 callable/trigger/schedu
 | RTC lifecycle／signaling／cleanup（見 [RTC](RTC.md)） | `LIVEKIT_URL`、`LIVEKIT_API_KEY`、`LIVEKIT_API_SECRET` | 語音／視訊、正式來電、single-call lock、recovery |
 | `requestUpload`／`finalizeUpload`／`getAttachmentDownloadUrl`／`cleanupExpiredUploads`／`cleanupOrphanR2Objects` | `R2_ACCOUNT_ID`、`R2_ACCESS_KEY_ID`、`R2_SECRET_ACCESS_KEY`、`R2_BUCKET` | 檔案附件、語音訊息 |
 | `requestCustomStickerUpload`／`finalizeCustomStickerUpload`／`getCustomStickerDownloadUrl`／`deleteCustomSticker`／`cleanupExpiredCustomStickerUploads` | 同上 R2 | 自訂貼圖 |
-| `generateGeminiReply`／`cleanupExpiredAIDrafts` | `GEMINI_API_KEY`（cleanup 本身不需要） | AI 回覆與草稿 |
 | `searchMessages`／`syncMessageSearchIndex` | `ALGOLIA_APP_ID`、`ALGOLIA_ADMIN_KEY`、`ALGOLIA_INDEX_NAME` | 歷史訊息搜尋 |
 
 「需要的 secret」是逐一核對每支 Function 的 `secrets:` 宣告得到的，不是從功能名稱推測。要重新確認：
@@ -216,6 +223,8 @@ firebase functions:delete startLiveKitCallV2 getLiveKitTokenV2 confirmLiveKitCal
 
 ## 7. 批次 D：AI 回覆（Gemini）
 
+已於 2026-08-14 透過 `ai_backend` phase 部署。以下保留金鑰輪替、模型設定、驗收與回滾的操作紀錄；不要重複部署，除非修改了 AI Functions。
+
 ### 7.1 取得並寫入金鑰
 
 到 <https://aistudio.google.com> → Get API key → Create API key，選 `f-chat-wayde-fu` 專案。然後：
@@ -269,4 +278,4 @@ firebase functions:delete generateGeminiReply cleanupExpiredAIDrafts --project f
 
 ## 8. 交接時要更新的地方
 
-每完成一個批次，更新 [HANDOFF](HANDOFF.md) 的〈Provider integrations not yet production-ready〉與〈Immediate follow-up〉，並把該批次的 Functions 從這份文件第 0 節的「未部署」表移到「已上線」。
+每完成一個批次，更新 [HANDOFF](HANDOFF.md) 的〈Provider integrations〉與〈Immediate follow-up〉，並把該批次的 Functions 從這份文件第 0 節的「未部署」表移到「已上線」。

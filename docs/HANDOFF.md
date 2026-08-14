@@ -96,8 +96,15 @@ Calls V2 (deployed 2026-08-14, `rtc_backend` phase):
 - `cleanupStaleLiveKitCalls`
 - `cleanupExpiredCallSignals`
 
-Everything else in `functions/src/index.ts` remains undeployed. The enablement
-order and per-batch gates are in [FEATURE-ENABLEMENT](FEATURE-ENABLEMENT.md).
+Gemini AI (deployed 2026-08-14, `ai_backend` phase, GitHub Actions run
+31798296940):
+
+- `generateGeminiReply`
+- `cleanupExpiredAIDrafts`
+
+The remaining Functions in `functions/src/index.ts` are undeployed. The
+enablement order and per-batch gates are in
+[FEATURE-ENABLEMENT](FEATURE-ENABLEMENT.md).
 
 `syncMembershipMirror` is retryable and idempotent. `reconcileMembershipMirrors` runs every 15 minutes. Firestore membership is canonical; the RTDB mirror remains an eventually consistent derivative. Revocation stays fail-closed through the `revoking` state and operation journal.
 
@@ -238,17 +245,21 @@ The deploy roles were granted on 2026-08-13 for the first Functions deploy. `git
 
 The others are `firebasehosting.admin`, `serviceusage.serviceUsageConsumer`, `firebaserules.admin`, `firebasedatabase.admin`, `cloudfunctions.developer`, `iam.serviceAccountUser`, `artifactregistry.writer`, `run.admin`, `eventarc.developer` and `secretmanager.admin`. `secretmanager.admin` is broader than ideal; the narrower alternative is to pre-grant `secretAccessor` to the Functions runtime service account and drop the deploy account to `secretmanager.viewer`.
 
-## Provider integrations not yet production-ready
+## Provider integrations
 
-The repository contains implementation boundaries for Gemini, R2, LiveKit, and Algolia, but their feature backends were intentionally not deployed with placeholder credentials.
+LiveKit calls and the Gemini generation endpoint are live in production. Gemini was deployed
+on 2026-08-14 in [GitHub Actions run 31798296940](https://github.com/waydefu/chat-beta/actions/runs/31798296940):
+`generateGeminiReply` and `cleanupExpiredAIDrafts` were both created in
+`asia-east1`. A no-content callable health check reached the deployed endpoint;
+the remaining user-facing validation is the `@Gemini` streaming and cancellation
+check listed below.
 
-LiveKit was configured on 2026-08-13 and calls are live. The remaining secrets
+The remaining provider secrets
 still contain `UNCONFIGURED` placeholder versions created only to pass additive
 deployment prompts. They are not valid credentials. Do not deploy the Functions
 that depend on them until each value is replaced and verified in protected
 staging:
 
-- `GEMINI_API_KEY`
 - `R2_ACCOUNT_ID`
 - `R2_ACCESS_KEY_ID`
 - `R2_SECRET_ACCESS_KEY`
@@ -268,17 +279,23 @@ Required provider gates:
 2. Configure R2 CORS, lifecycle rules, quotas, and orphan cleanup.
 3. Configure LiveKit Cloud project, grants, and short token TTL.
 4. Configure a room-bound Algolia index and verify delete synchronization.
-5. Pin a stable Gemini model through Remote Config and verify usage/rate limits.
-6. Run protected staging smoke tests before deploying `feature_backend`.
+5. Verify Gemini streaming, cancellation, usage metadata, rate limits, and the
+   configured stable model with a real room invocation.
+6. Run protected staging smoke tests before deploying any remaining provider
+   Functions or `feature_backend`.
 
-Until those gates pass, Gemini generation, R2 uploads, LiveKit calls, and Algolia historical search must not be represented as production-ready.
+R2 uploads and Algolia historical search must not be represented as
+production-ready until their respective gates pass.
 
 ## Immediate follow-up
 
 1. Run authenticated smoke tests with all three existing accounts: room discovery, join, send/read/unread, multi-tab presence, typing, offline text queue, and member removal.
 2. Observe Functions errors, Rules denials, App Check metrics, Firestore writes, RTDB mirror drift, and billing for at least 24 hours after rollout.
 3. Grant the remaining deploy roles when a phase beyond `hosting_client` is first run. WIF itself is done; the service account is deliberately scoped to hosting only.
-4. Replace and stage-test provider credentials, then deploy only the explicitly listed feature Functions. The batch order, per-batch gates, and the two repository changes this requires are recorded in [FEATURE-ENABLEMENT](FEATURE-ENABLEMENT.md).
+4. Run the Gemini room smoke test (streaming, cancellation, usage and rate-limit
+   behaviour), then replace and stage-test the remaining provider credentials
+   before deploying only their explicitly listed Functions. The batch order and
+   per-batch gates are recorded in [FEATURE-ENABLEMENT](FEATURE-ENABLEMENT.md).
 5. Enable App Check enforcement one surface at a time after legitimate traffic is visible in metrics.
 6. Perform the rollback restore drill using a paired Firestore/RTDB backup in an isolated project.
 7. Remove legacy fields, legacy RTDB paths, compatibility branches, and explicitly inventoried legacy Functions only after the seven-day observation gate. For this rollout, the earliest planned cleanup date is 2026-08-19, and only if monitoring is clean.
