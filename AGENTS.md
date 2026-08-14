@@ -108,6 +108,30 @@ Requires Node 22, pnpm 11, Java 21 (Rules emulator).
 
 Deployment: NEVER run `pnpm deploy` or `firebase deploy` for production. Production deploys run through the `Deploy Firebase production` GitHub workflow with an explicit `rollout_phase` and its attestation inputs.
 
+## Engineering Principles & Agent Operating Guidelines
+
+1. **企業級與模組化架構**：偏好企業級、可維護、可擴充、模組化的程式架構；寧可多花一些時間建立正確架構，也不採用短期 hack。重視實際可維護性勝過理論上的過度抽象。
+2. **Strict TypeScript & 清楚邊界**：全專案維持嚴格 TypeScript（開啟 `noUncheckedIndexedAccess`），保持清楚的型別與模組邊界，嚴禁 `any`、隱性耦合與不必要的 workaround。
+3. **理解現況後再動手**：大型修改前，先理解現有架構、資料流、生命週期與 production 狀態，不得在未查核現況前貿然重寫。
+4. **計畫與執行分級**：複雜任務先提出完整實作計畫、風險、影響範圍與驗證方式再執行；小型且低風險的修改直接落地，避免過度規劃。
+5. **最小安全變更（Smallest Safe Change）**：只修改任務真正需要的檔案，嚴禁 unrelated refactor、順手重寫與無關 diff。
+6. **重視實際可維護性**：不為了「架構漂亮」過度抽象；每個抽象層都必須有明確的職責與消費者。
+7. **主動清理死碼與技術債**：確認無動態引用或 production 依賴後，主動清除死碼、重複邏輯、過期相容層與 stale documentation；路過發現的債登記至 `docs/TECH-DEBT.md`。
+8. **明確的 Ownership 與 Lifecycle**：狀態、listener、timer、subscription、abort signal 等必須有明確 owner 與 cleanup，切換房間或組件銷毀時不得遺留未清理資源。
+9. **後端與安全原則**：後端與安全相關設計一律 server-authoritative、fail-closed、idempotent、race-safe、可重試、可稽核。
+10. **保守的安全邊界**：涉及資料、權限、認證、Secret、Firebase Rules 或 production mutation 時，採取最保守策略；嚴禁為了開發方便放寬安全邊界。
+11. **唯讀檢查、Rollback 與 Checkpoint**：修改前優先執行唯讀檢查確認現況；高風險操作必須具備 rollback 路徑，破壞性操作前保留 checkpoint / backup snapshot。
+12. **多層級完整驗證**：每個有意義的變更均依影響範圍執行 lint、typecheck、unit test、rules test、build、E2E 或 browser smoke test。
+13. **嚴格區分生產狀態**：不把「build 成功」或「deploy 成功」視為「功能驗證成功」；精確標註 `CODE-ONLY`、`DEPLOYED`、`SMOKE-VERIFIED`、`MANUAL-VERIFICATION-REQUIRED`。
+14. **Git / GitHub 紀律**：保留乾淨歷史、不 force-push；較大變更拆成聚焦且容易 review 的 commit / PR，CI 維持綠燈。
+15. **知行合一的 AI 執行**：任務確認後直接「實作 → 測試 → 修正 → 驗證 → 回報結果」，不流於只給計畫而不動手。
+16. **高效率 Context 導航**：AI Agent 嚴禁每次全域掃描 repo；優先讀取 `AGENTS.md`、架構文件與 Task Routing 指定檔案，按需展開。
+17. **沿用專案地圖降低 Token 成本**：理解過的專案沿用既有 context 與 project map，避免每次新任務從零重新考古。
+18. **求真求實、查證代替猜測**：清楚區分已驗證事實、合理推論與未確認資訊；不知道就執行指令或讀檔查證，嚴禁臆測。
+19. **模型分工策略**：複雜架構、全專案稽核與重大決策使用高推理能力模型；方向明確後的大量 coding、測試與重複施工由執行效率較高的模型接手。
+20. **專業 UI/UX 標準**：兼顧桌面與手機端（含 320px 響應）、資訊層級、一致性、無障礙（WCAG 2.1 AA）與長期維護性；避免 AI template 感與無意義的大圓角卡片堆疊。
+21. **文件與程式碼同步**：架構、重要決策、部署流程與特殊限制保有明確的 Single Source of Truth，避免跨文件重複複製造成漂移。
+
 ## Validation Matrix
 
 | Change | Minimum validation |
