@@ -90,6 +90,30 @@ gh workflow run "Deploy Firebase production" --repo waydefu/chat-beta -f rollout
 
 建議明確部署順序：Push ownership Functions → Hosting → adoption/metrics gate → chat/call sender Functions → restrictive Firestore Rules。rollback時，additive claim資料可安全保留；若只回滾Hosting，不能回到會直接寫token的舊client而同時保留restrictive Rules。sender可先回滾到前一版，Rules/Hosting應成對選擇相容release，不得為了方便臨時開放global claims。
 
+## RTC 與 Push 合併發布順序
+
+`main` 上 RTC V2（PR #25）與 Push ownership（PR #26）尚未發布，兩者會在同一次 rollout 上線。上面兩節各自的順序合起來會互相卡住，實際順序以本節為準：
+
+- 新 client 呼叫 `startLiveKitCallV2` 等 V2 callable，所以 `rtc_backend` 必須早於 `hosting_client`。
+- `push_adoption_verified` 要等新 client 上線後才量得到，所以它不能是 `rtc_backend` 的前置條件。RTC 之中只有 `syncCallSignals` 依賴 canonical push registry，它已改由 `push_sender_backend` 部署。
+- 新 client 只寫 global Presence，RTDB additive rules 必須早於 `hosting_client`；但同一次的 `firestore.rules` 已禁止 client 直寫 `users/{uid}/pushTokens`，那一條必須等 adoption。因此 RTDB 與 Firestore Rules 拆成兩個 phase：`additive_rules` 只送 `--only database`，Firestore Rules 留到最後的 `restrictive_rules`。
+- `users/{uid}/incomingCalls` 的讀取權限在 `restrictive_rules` 才開。這不影響功能：寫入該路徑的 `syncCallSignals` 同樣在 `push_sender_backend` 才上線，兩步之間只有一個沒有資料可讀的空窗，`restrictive_rules` 應緊接其後執行。
+
+```bash
+gh workflow run "Deploy Firebase production" --repo waydefu/chat-beta -f rollout_phase=push_ownership_backend -f migration_verified=true -f providers_verified=false -f push_adoption_verified=false
+gh workflow run "Deploy Firebase production" --repo waydefu/chat-beta -f rollout_phase=rtc_backend -f migration_verified=true -f providers_verified=true -f push_adoption_verified=false
+gh workflow run "Deploy Firebase production" --repo waydefu/chat-beta -f rollout_phase=additive_rules -f migration_verified=true -f providers_verified=false -f push_adoption_verified=false
+gh workflow run "Deploy Firebase production" --repo waydefu/chat-beta -f rollout_phase=hosting_client -f migration_verified=true -f providers_verified=false -f push_adoption_verified=false
+# 人工 gate：adoption metrics 與上面兩節的 smoke 全部通過後才繼續
+gh workflow run "Deploy Firebase production" --repo waydefu/chat-beta -f rollout_phase=push_sender_backend -f migration_verified=true -f providers_verified=false -f push_adoption_verified=true
+gh workflow run "Deploy Firebase production" --repo waydefu/chat-beta -f rollout_phase=restrictive_rules -f migration_verified=true -f providers_verified=false -f push_adoption_verified=true
+```
+
+`rtc_backend` 的 `providers_verified=true` 只涵蓋 LiveKit；LiveKit 已於 2026-08-13 設定完成並在 production 使用中，其餘 provider 仍是 placeholder，不可據此執行 `feature_backend`。
+
+rollback：`hosting_client` 之前的每一步都是 additive，單獨回滾 Hosting 即可讓舊 client 繼續使用未被覆蓋的舊三支 RTC callable 與 legacy room Presence。`restrictive_rules` 一旦送出，就不可以只回滾 Hosting 而保留該版 Rules。
+
+
 ## 4. 驗證與分階段發布
 
 1. 等待 `syncMembershipMirror`，再觀察至少一次 `reconcileMembershipMirrors`；比較 active membership、user room index、operation journal 與 RTDB mirror。
