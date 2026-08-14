@@ -37,3 +37,7 @@ Global Presence 不作為 room ACL。每位 authenticated user 只能寫 `realti
 ## App Check 與 secrets
 
 Web 使用 reCAPTCHA Enterprise。先在 Firebase Console 監測有效/無效比例，再以 Functions 非機密環境變數 `APP_CHECK_ENFORCED_FEATURES` 依 `membership,ai,media,notifications,rtc,search,stickers` 分組 enforce；空值代表監測期。RTC與Push ownership callables在client一律要求limited-use token，backend在對應feature enforce時consume。Firestore、RTDB、FCM 依 migration runbook 分批收緊。所有 provider credential 使用 Secret Manager，且 presigned URL 視為短效 bearer token。
+
+## AI 與 Google Search Grounding 隱私
+
+提及 @Gemini 時，僅送出目前房間必要的上下文與使用者問題。若模型判定需要即時公開資訊而使用 Google Search grounding，搜尋查詢由 Google 端原生處理；伺服器端僅正規化並儲存驗證後的來源網址與標題（上限 5 筆），且 Cloud Logging 僅記錄 `groundingUsed` 與來源數量，嚴禁記錄使用者搜尋 query、造訪網址、頁面標題或對話全文。

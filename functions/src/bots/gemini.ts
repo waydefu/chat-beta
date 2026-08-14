@@ -10,6 +10,12 @@ import { buildBotContext } from './context-builder.js';
 import { BotPermissionService, BotRateLimiter, BotRegistry, BotRouter } from './framework.js';
 import { geminiCountTokensConfig, geminiGenerationConfig } from './gemini-request-config.js';
 import { aiErrorMessage, classifyProviderError, type AiErrorCode } from './ai-errors.js';
+import {
+  determineGroundingUsed,
+  mergeGroundingSources,
+  type AIGrounding,
+  type AISource,
+} from './grounding-policy.js';
 import { stableGeminiModel } from './model-config.js';
 
 const BOT_ID = 'gemini';
@@ -17,7 +23,15 @@ const BOT_NAME = 'Gemini';
 const LEASE_MS = 90_000;
 const DRAFT_TTL_MS = 10 * 60_000;
 const INPUT_TOKEN_BUDGET = 24_000;
-const SYSTEM_INSTRUCTION = '你是 Chat Lite 聊天室中的 AI 參與者。只根據提供的聊天室內容回答，簡潔、誠實，不聲稱擁有未提供的權限或資料。';
+const SYSTEM_INSTRUCTION =
+  '你是 Chat Lite 聊天室中的 AI 參與者。\n' +
+  '優先根據聊天室提供的 context 理解問題。\n' +
+  '如果問題涉及現在、今天、最新、即時、天氣、新聞、價格、版本、發布狀態、公開事件或可能已變動的公開資訊，且 Google Search grounding 可提高正確性，應使用 Google Search。\n' +
+  '如果問題不需要最新資料，不要為了搜尋而搜尋。\n' +
+  '不得聲稱查過資料如果實際沒有 grounding，不得聲稱擁有使用者未授權的私人資料，不得聲稱看得到 Gmail、Google 日曆、Google 雲端硬碟，也不得聲稱知道使用者精確位置。\n' +
+  '若問題詢問天氣或在地資訊但地點不明確（例如「今天天氣如何？」且聊天室沒有地點資訊），應主動詢問使用者想查詢的地點，不要猜測使用者所在地。\n' +
+  '回答天氣時，應依據近期搜尋資訊說明時間點，若搜尋結果不足應明確表明資料不足，不可自行虛構數值或降雨機率。\n' +
+  '回答保持簡潔、誠實與繁體中文。';
 const ENFORCE_APP_CHECK = appCheckEnforced('ai');
 const botRegistry = new BotRegistry([{ id: BOT_ID, displayName: BOT_NAME, provider: 'gemini' }]);
 const botRouter = new BotRouter(botRegistry);
@@ -35,6 +49,8 @@ interface AiGenerateLogFields {
   acceptsStreaming: boolean;
   authPresent: boolean;
   appCheckPresent: boolean;
+  groundingUsed?: boolean;
+  groundingSourceCount?: number;
 }
 
 function logAiGenerate(
@@ -191,6 +207,8 @@ export const generateGeminiReply = onCall(
     let lastDraftLength = 0;
     let usage: { inputTokens: number; outputTokens: number; totalTokens: number } | undefined;
     let concurrencyAcquired = false;
+    let accumulatedSources: AISource[] = [];
+    let rawSearchDetected = false;
     const abortController = new AbortController();
     response?.signal.addEventListener('abort', () => abortController.abort(), { once: true });
 
@@ -240,6 +258,14 @@ export const generateGeminiReply = onCall(
             totalTokens: chunk.usageMetadata.totalTokenCount ?? 0,
           };
         }
+        const chunkMetadata = chunk.candidates?.[0]?.groundingMetadata
+          ?? (chunk as { groundingMetadata?: unknown }).groundingMetadata;
+        if (chunkMetadata) {
+          accumulatedSources = mergeGroundingSources(accumulatedSources, chunkMetadata);
+          if (determineGroundingUsed([], chunkMetadata)) {
+            rawSearchDetected = true;
+          }
+        }
         if (!text) continue;
         finalText += text;
         await response?.sendChunk({ runId, text });
@@ -259,6 +285,11 @@ export const generateGeminiReply = onCall(
       }
 
       if (!finalText.trim()) throw new HttpsError('internal', 'Gemini 沒有產生可顯示的內容。');
+      const usedSearch = determineGroundingUsed(accumulatedSources, rawSearchDetected);
+      const grounding: AIGrounding | undefined = usedSearch
+        ? { usedSearch: true, sources: accumulatedSources }
+        : undefined;
+
       await firestore.runTransaction(async (transaction) => {
         const current = await transaction.get(requestRef);
         if (current.data()?.status === 'complete') return;
@@ -271,7 +302,11 @@ export const generateGeminiReply = onCall(
           text: finalText,
           createdAt: FieldValue.serverTimestamp(),
           replyToId: sourceMessageId,
-          metadata: { aiRequestId: runId, model: lease.model },
+          metadata: {
+            aiRequestId: runId,
+            model: lease.model,
+            ...(grounding ? { grounding } : {}),
+          },
         });
         transaction.set(requestRef, {
           status: 'complete',
@@ -279,6 +314,8 @@ export const generateGeminiReply = onCall(
           model: lease.model,
           latencyMs: Date.now() - started,
           ...(usage ? { usage } : {}),
+          groundingUsed: Boolean(grounding?.usedSearch),
+          groundingSourceCount: accumulatedSources.length,
           updatedAt: FieldValue.serverTimestamp(),
           completedAt: FieldValue.serverTimestamp(),
           leaseExpiresAt: FieldValue.delete(),
@@ -307,9 +344,17 @@ export const generateGeminiReply = onCall(
         model: lease.model,
         modelSource: modelChoice.source,
         latencyMs: Date.now() - handlerStartedAt,
+        groundingUsed: Boolean(grounding?.usedSearch),
+        groundingSourceCount: accumulatedSources.length,
         ...logContext,
       });
-      return { runId, finalMessageId: messageRef.id, model: lease.model, replayed: false };
+      return {
+        runId,
+        finalMessageId: messageRef.id,
+        model: lease.model,
+        replayed: false,
+        ...(grounding ? { grounding } : {}),
+      };
     } catch (error) {
       const aborted = abortController.signal.aborted;
       const domainCode = domainCodeOf(error, aborted);
