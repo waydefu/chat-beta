@@ -18,7 +18,9 @@ const ENFORCE_APP_CHECK = appCheckEnforced('notifications');
 const CLAIM_SCHEMA_VERSION = 1;
 const USER_QUERY_CHUNK = 30;
 const TARGET_PAGE_SIZE = 500;
-const WRITE_BATCH_SIZE = 400;
+// Each target deletes a canonical claim and one user mirror. Keep the resulting
+// write batch below Firestore's 500-operation limit.
+const WRITE_BATCH_SIZE = 200;
 const STALE_TOKEN_AGE_MS = 90 * 24 * 60 * 60_000;
 const STALE_CLEANUP_PAGES = 5;
 
