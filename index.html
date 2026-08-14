@@ -47,7 +47,11 @@
 
         <div class="sidebar-footer">
           <label class="setting-row" for="theme-toggle"><span>深色模式</span><input id="theme-toggle" type="checkbox" /></label>
-          <label class="setting-row" for="offline-toggle"><span>可信裝置離線資料</span><input id="offline-toggle" type="checkbox" /></label>
+          <label class="setting-row" for="offline-toggle">
+            <span class="setting-copy">可信裝置離線資料<small id="offline-status"></small></span>
+            <input id="offline-toggle" type="checkbox" />
+          </label>
+          <button id="offline-retry-btn" class="offline-retry" type="button" hidden>關閉其他分頁後重試清除</button>
           <label class="setting-row" for="push-toggle" hidden><span>關閉頁面時通知我</span><input id="push-toggle" type="checkbox" /></label>
         </div>
       </aside>

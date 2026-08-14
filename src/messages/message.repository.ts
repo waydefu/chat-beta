@@ -23,6 +23,7 @@ export const MESSAGE_PAGE_SIZE = 50;
 
 export interface MessagePage {
   messages: ChatMessage[];
+  changedIds: string[];
   oldest: QueryDocumentSnapshot<DocumentData> | null;
   hasMore: boolean;
 }
@@ -48,6 +49,9 @@ export function watchRecentMessages(
   return onSnapshot(messagesQuery, { includeMetadataChanges: true }, (snapshot) => {
     next({
       messages: snapshot.docs.map(mapMessage).reverse(),
+      changedIds: snapshot.docChanges({ includeMetadataChanges: true })
+        .filter((change) => change.type !== 'removed')
+        .map((change) => change.doc.id),
       oldest: snapshot.docs.at(-1) ?? null,
       hasMore: snapshot.size === MESSAGE_PAGE_SIZE,
     });
@@ -66,6 +70,7 @@ export async function loadOlderMessages(
   ));
   return {
     messages: snapshot.docs.map(mapMessage).reverse(),
+    changedIds: snapshot.docs.map((document) => document.id),
     oldest: snapshot.docs.at(-1) ?? oldest,
     hasMore: snapshot.size === MESSAGE_PAGE_SIZE,
   };
@@ -163,11 +168,13 @@ export function watchReactions(
   }
   const chunks = Array.from({ length: Math.ceil(ids.length / 30) }, (_, index) => ids.slice(index * 30, index * 30 + 30));
   const buckets = new Map<number, Reaction[]>();
+  const ready = new Set<number>();
   const unsubscribes = chunks.map((chunk, index) => onSnapshot(
     query(collection(firestore, 'rooms', roomId, 'reactions'), where('messageId', 'in', chunk)),
     (snapshot) => {
       buckets.set(index, snapshot.docs.map((reaction) => reaction.data() as Reaction));
-      next([...buckets.values()].flat());
+      ready.add(index);
+      if (ready.size === chunks.length) next([...buckets.values()].flat());
     },
     error,
   ));

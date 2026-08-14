@@ -94,7 +94,7 @@ done
 
 `secretmanager.admin` 的範圍偏大。較窄的替代方案是預先把 `roles/secretmanager.secretAccessor` 授給 Functions 的 runtime service account，部署帳號降為 `roles/secretmanager.viewer`。目前採用的是前者。
 
-這份清單到 `additive_backend`、`notification_backend`、`rtc_backend`、`hosting_client` 四個階段為止都夠用。批次 C／D 的排程 Function 尚未部署過，可能還會再冒出新的權限——同樣的處理方式：讓它失敗、讀錯誤、補那一項、把結果寫回這張表。
+這份清單涵蓋 `additive_backend`、`notification_backend`、`push_ownership_backend`、`push_sender_backend`、`rtc_backend`、`ai_backend`、`hosting_client`。`cleanupStalePushTokens`與RTC cleanup都需要Cloud Scheduler；若新排程仍回報權限錯誤，同樣先讀精確錯誤、只補那一項並把結果寫回這張表，不可改用個人憑證繞過。
 
 這份角色清單是起點而非定論。Functions 部署常會再要求額外權限，正確做法是讓部署失敗、讀錯誤訊息指名的權限再補，而不是預先大範圍授權。
 

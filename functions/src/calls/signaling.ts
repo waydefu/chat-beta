@@ -6,20 +6,14 @@ import { onSchedule } from 'firebase-functions/v2/scheduler';
 
 import { firestore } from '../admin.js';
 import { REGION } from '../config.js';
+import { prunePushTargets, pushTargetsForUsers, type PushTarget } from '../notifications/push-registry.js';
 import { callSignalDocumentId, isCallStatus, isTerminalCallStatus, type CallStatus } from './call-state.js';
 
 const PAGE_SIZE = 200;
 const WRITE_BATCH_SIZE = 400;
 const PUSH_BATCH_SIZE = 500;
-const TOKEN_LOOKUP_CONCURRENCY = 25;
 const SIGNAL_RETENTION_MS = 7 * 24 * 60 * 60_000;
 const TERMINAL_SIGNAL_STATUSES = new Set(['rejected', 'failed']);
-
-interface SignalTarget {
-  uid: string;
-  token: string;
-  ref: FirebaseFirestore.DocumentReference;
-}
 
 async function activeMemberIds(roomId: string, startedBy: string): Promise<string[]> {
   const result: string[] = [];
@@ -70,21 +64,6 @@ async function createMissingInChunks(
   }
 }
 
-async function pushTargets(uids: string[]): Promise<SignalTarget[]> {
-  const result: SignalTarget[] = [];
-  for (let index = 0; index < uids.length; index += TOKEN_LOOKUP_CONCURRENCY) {
-    const targets = await Promise.all(uids.slice(index, index + TOKEN_LOOKUP_CONCURRENCY).map(async (uid) => {
-      const tokens = await firestore.collection(`users/${uid}/pushTokens`).get();
-      return tokens.docs.flatMap((token) => {
-        const value = token.data().token;
-        return typeof value === 'string' && value ? [{ uid, token: value, ref: token.ref }] : [];
-      });
-    }));
-    result.push(...targets.flat());
-  }
-  return result;
-}
-
 async function notifyIncomingCall(
   uids: string[],
   call: DocumentData,
@@ -92,8 +71,8 @@ async function notifyIncomingCall(
   callId: string,
 ): Promise<void> {
   const startedAt = Date.now();
-  const targets = await pushTargets(uids);
-  const stale: FirebaseFirestore.DocumentReference[] = [];
+  const targets = await pushTargetsForUsers(uids);
+  const stale: PushTarget[] = [];
   const kind = call.kind === 'video' ? 'video' : 'voice';
   const title = kind === 'video' ? '視訊來電' : '語音來電';
   const caller = typeof call.startedByDisplayName === 'string' ? call.startedByDisplayName : '聊天室成員';
@@ -119,11 +98,11 @@ async function notifyIncomingCall(
       const code = result.error?.code;
       const target = batch[position];
       if (target && (code === 'messaging/registration-token-not-registered' || code === 'messaging/invalid-argument')) {
-        stale.push(target.ref);
+        stale.push(target);
       }
     });
   }
-  if (stale.length) await Promise.all(stale.map((reference) => reference.delete().catch(() => undefined)));
+  if (stale.length) await prunePushTargets(stale);
   logger.info('RTC incoming push complete', {
     operation: 'rtc.signal.push', roomId, callId, result: 'complete', recipients: uids.length, targets: targets.length,
     durationMs: Date.now() - startedAt,

@@ -26,6 +26,7 @@ export {
 } from './calls/livekit.js';
 export { cleanupExpiredCallSignals, syncCallSignals } from './calls/signaling.js';
 export { notifyOnMessage } from './notifications/push.js';
+export { claimPushToken, cleanupStalePushTokens, releasePushToken } from './notifications/push-registry.js';
 export { searchMessages, syncMessageSearchIndex } from './search/algolia.js';
 export {
   cleanupExpiredCustomStickerUploads,

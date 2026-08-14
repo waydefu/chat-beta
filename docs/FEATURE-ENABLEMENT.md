@@ -89,32 +89,27 @@ Client 有些功能會走真實 callable；是否 production-ready 以 fresh Fun
 
 ## 3. 批次 A：推播與內建貼圖
 
-### 3.1 為什麼推播現在沒作用
+### 3.1 推播啟用條件
 
-VAPID key 已經在 GitHub production environment、Service Worker 在 [src/app/bootstrap.ts](../src/app/bootstrap.ts) 註冊、client 訂閱流程 [src/notifications/push.ts](../src/notifications/push.ts) 完整、Firestore rules 也允許使用者寫自己的 `users/{uid}/pushTokens`。**唯一缺的就是 `notifyOnMessage` 沒有部署，所以沒有任何東西會去送推播。** 這是目前投報率最高的一項。
+PR 2之後，client不再直接寫`users/{uid}/pushTokens`。`claimPushToken`／`releasePushToken`用transaction維護`pushTokenClaims/{sha256(token)}`唯一owner和user-private mirror；chat與call sender只信任canonical registry。這避免同一browser token跨帳號殘留，也表示舊版「只部署notifyOnMessage」流程已失效，必須走[MIGRATION](MIGRATION.md)的分段adoption gate。
 
 ### 3.2 部署
 
-```bash
-gh workflow run "Deploy Firebase production" --repo waydefu/chat-beta -f rollout_phase=notification_backend -f migration_verified=true -f providers_verified=false
-```
+workflow已提供`push_ownership_backend`和`push_sender_backend`。先跑ownership phase，再部署`hosting_client`並觀察adoption；驗證後以`push_adoption_verified=true`跑sender，最後才跑`restrictive_rules`。不得用`feature_backend`或`full_post_migration`一次跨過gate；兩者也會檢查同一個adoption確認。
 
 ### 3.3 驗收
 
-1. `firebase functions:list --project f-chat-wayde-fu` 出現 `notifyOnMessage` 與 `sendStickerMessage`。
-2. A、B 兩個帳號同房。B 開啟推播，確認 Firestore `users/{B}/pushTokens` 出現一筆文件。
+1. `firebase functions:list --project f-chat-wayde-fu` 出現`claimPushToken`、`releasePushToken`、`cleanupStalePushTokens`與`notifyOnMessage`。
+2. A、B 兩個帳號同房。B 開啟推播，確認`pushTokenClaims/{hash}.uid=B`和`users/{B}/pushTokens/{hash}.ownershipVersion=1`；client不得讀global claim。
 3. B 把分頁切到背景，A 送一則訊息，B 應收到系統通知，點擊後開到該房間。
 4. B 把該房間設為靜音，A 再送一則，B 不應收到——`notifyOnMessage` 有讀 `roomStates/{roomId}.muted`。
-5. Cloud Logging 查 `notifyOnMessage`，確認沒有 `messaging/` 開頭的錯誤堆積。
-6. 送一張內建貼圖，訊息列正常顯示。
+5. B登出或切換成A，舊B mirror必須消失或同hash owner原子轉移；B不再收到A帳號通知。
+6. Cloud Logging查structured operations，確認沒有`messaging/`錯誤堆積，也沒有token或message text。
+7. 送一張內建貼圖，訊息列正常顯示。
 
 ### 3.4 回滾
 
-```bash
-firebase functions:delete notifyOnMessage --project f-chat-wayde-fu --region asia-east1
-```
-
-刪掉即可。這兩支沒有資料遷移，也不會留下需要清理的狀態。
+先回滾sender，再回滾Hosting/Rules到彼此相容的release。`pushTokenClaims`是additive資料，可保留供roll-forward；不得刪callables後仍讓新版client呼叫，也不得回滾成client直寫token卻保留restrictive Rules。詳細步驟以[MIGRATION](MIGRATION.md)為準。
 
 ## 4. 批次 B：通話（LiveKit）
 

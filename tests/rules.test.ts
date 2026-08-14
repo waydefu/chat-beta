@@ -7,9 +7,9 @@ import {
   type RulesTestContext,
   type RulesTestEnvironment,
 } from '@firebase/rules-unit-testing';
-import { deleteDoc, doc, getDoc, serverTimestamp, setDoc, updateDoc, type Firestore } from 'firebase/firestore';
+import { deleteDoc, doc, getDoc, serverTimestamp, setDoc, updateDoc, writeBatch, type Firestore } from 'firebase/firestore';
 import { get, ref, set, type Database } from 'firebase/database';
-import { afterAll, beforeAll, beforeEach, describe, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 const ROOM_ID = 'general';
 const ROOM_KEY = 'Z2VuZXJhbA';
@@ -56,6 +56,12 @@ async function seedFirestore(status: 'active' | 'revoking' = 'active'): Promise<
       text: 'Original',
       mentions: [],
       createdAt: new Date(),
+    });
+    await setDoc(doc(database, 'users', 'alice', 'roomStates', ROOM_ID), {
+      membershipStatus: status,
+      role: 'member',
+      roomName: 'General',
+      updatedAt: new Date(),
     });
   });
 }
@@ -179,6 +185,25 @@ describe('Firestore room ACL', () => {
       messageId: 'm1', userId: 'owner', emoji: '👍', updatedAt: serverTimestamp(),
     }));
   });
+
+  it('allows atomic read-state mirrors and rejects the whole batch on an invalid mirror', async () => {
+    await seedFirestore();
+    const alice = testFirestore(environment.authenticatedContext('alice'));
+    const roomReadRef = doc(alice, 'rooms', ROOM_ID, 'readStates', 'alice');
+    const userStateRef = doc(alice, 'users', 'alice', 'roomStates', ROOM_ID);
+    const first = writeBatch(alice);
+    const readState = { lastReadAt: serverTimestamp(), lastReadMessageId: 'm1', updatedAt: serverTimestamp() };
+    first.set(roomReadRef, readState, { merge: true });
+    first.set(userStateRef, readState, { merge: true });
+    await assertSucceeds(first.commit());
+
+    const invalid = writeBatch(alice);
+    invalid.set(roomReadRef, { ...readState, lastReadMessageId: 'm2' }, { merge: true });
+    invalid.set(userStateRef, { ...readState, role: 'owner', lastReadMessageId: 'm2' }, { merge: true });
+    await assertFails(invalid.commit());
+    expect((await getDoc(roomReadRef)).data()?.lastReadMessageId).toBe('m1');
+    expect((await getDoc(userStateRef)).data()?.lastReadMessageId).toBe('m1');
+  });
 });
 
 describe('Realtime Database room ACL', () => {
@@ -277,6 +302,27 @@ describe('Incoming call signal ACL', () => {
     await assertFails(setDoc(doc(alice, 'users', 'alice', 'incomingCalls', 'call-2'), {
       callId: 'call-2', roomId: ROOM_ID, status: 'ringing',
     }));
+  });
+});
+
+describe('Push token ownership ACL', () => {
+  it('keeps token claims server-authoritative and user token mirrors private', async () => {
+    await environment.withSecurityRulesDisabled(async (context) => {
+      const database = testFirestore(context);
+      await setDoc(doc(database, 'pushTokenClaims', 'token-hash'), { uid: 'alice', token: 'secret-token' });
+      await setDoc(doc(database, 'users', 'alice', 'pushTokens', 'token-hash'), {
+        token: 'secret-token', tokenHash: 'token-hash', ownershipVersion: 1,
+      });
+    });
+    const alice = testFirestore(environment.authenticatedContext('alice'));
+    const bob = testFirestore(environment.authenticatedContext('bob'));
+    await assertSucceeds(getDoc(doc(alice, 'users', 'alice', 'pushTokens', 'token-hash')));
+    await assertFails(getDoc(doc(bob, 'users', 'alice', 'pushTokens', 'token-hash')));
+    await assertFails(getDoc(doc(alice, 'pushTokenClaims', 'token-hash')));
+    await assertFails(setDoc(doc(alice, 'users', 'alice', 'pushTokens', 'client-token'), {
+      token: 'client-token', updatedAt: serverTimestamp(), userAgent: 'browser',
+    }));
+    await assertFails(deleteDoc(doc(alice, 'users', 'alice', 'pushTokens', 'token-hash')));
   });
 });
 
