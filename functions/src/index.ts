@@ -14,7 +14,17 @@ export {
   getAttachmentDownloadUrl,
   requestUpload,
 } from './media/uploads.js';
-export { endLiveKitCall, getLiveKitToken, startLiveKitCall } from './calls/livekit.js';
+export {
+  cleanupStaleLiveKitCalls,
+  confirmLiveKitCall,
+  endLiveKitCallV2,
+  failLiveKitCall,
+  getLiveKitTokenV2,
+  heartbeatLiveKitCall,
+  respondLiveKitCall,
+  startLiveKitCallV2,
+} from './calls/livekit.js';
+export { cleanupExpiredCallSignals, syncCallSignals } from './calls/signaling.js';
 export { notifyOnMessage } from './notifications/push.js';
 export { searchMessages, syncMessageSearchIndex } from './search/algolia.js';
 export {

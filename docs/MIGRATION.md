@@ -48,6 +48,24 @@ pnpm --filter chat-lite-functions migrate:v3 -- `
 
 沒有 `createdBy/ownerId` 的 room 只會標成 quarantined，必須人工指定 owner 後重跑。腳本可重入並保留 legacy fields；不得以移除安全參數的方式繞過 apply gate。
 
+## RTC + global Presence additive migration
+
+這一批不重寫既有 message 或 membership；採 additive-first：
+
+1. 部署 Firestore indexes與新版 V2 Functions，但先不要部署 client／Rules。V2使用 `startLiveKitCallV2`／`getLiveKitTokenV2`／`endLiveKitCallV2`，不覆蓋 production舊三支 contract。
+2. 等 index READY；確認 LiveKit secrets 是有效版本，且 `APP_CHECK_ENFORCED_FEATURES` 的 production 值已記錄。
+3. 部署 Firestore/RTDB additive Rules：新增 global Presence 與 incoming signal ACL，暫留 legacy room Presence Rules。
+4. 在 staging 執行 concurrent start、failed connect rollback、incoming accept/reject、stale cleanup、multi-tab/multi-device Presence 與 App Check smoke。
+5. 部署 Hosting client。新版 client 只寫 global Presence，不 dual-write legacy room Presence。
+6. 觀察至少七天，確認 legacy room Presence 沒有 supported client 流量、stale call cleanup 沒有異常、incoming signal cleanup有執行。
+7. 另開 cleanup PR移除 `realtime/rooms/{roomKey}/presence` 與相應 Rules，並明確刪除舊 `startLiveKitCall`／`getLiveKitToken`／`endLiveKitCall`。不得永久 dual architecture。
+
+**MANUAL PRODUCTION STEP**：production deploy service account 必須有 Eventarc（`syncCallSignals`）、Cloud Scheduler（兩支 cleanup）、Functions/Run、Rules/Database、Secret Manager 所需最小權限。必須先以 `firebase functions:list` 與 WIF workflow dry inventory確認，不可改用個人憑證繞過。
+
+部署順序：indexes → RTC V2 Functions/triggers/schedulers → additive Rules → Hosting。若 Functions 部署失敗，不部署會呼叫 V2 endpoints 的 Hosting。若 Hosting rollout失敗，可直接 rollback Hosting；舊 client仍使用未覆蓋的舊三支 backend，不需要放寬 Rules或回滾 additive資料。
+
+首次啟用前，對現有 `rooms/*/calls` 做 bounded read-only inventory。沒有 lease／room pointer 的舊 active call以 `startedAt + 4 hours`作 migration grace：grace內會阻擋同房 V2 start，避免新舊 client同時建立兩通；過期後由 bounded cleanup或 start fallback terminalize。若同房有 10筆以上 live legacy call，start會 `CALL_INVARIANT_REPAIR_REQUIRED` fail closed，必須人工審核後再啟用。
+
 ## 4. 驗證與分階段發布
 
 1. 等待 `syncMembershipMirror`，再觀察至少一次 `reconcileMembershipMirrors`；比較 active membership、user room index、operation journal 與 RTDB mirror。

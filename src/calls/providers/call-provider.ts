@@ -3,6 +3,8 @@ export interface CallParticipant {
   name: string;
 }
 
+export type CallTransportState = 'connecting' | 'connected' | 'reconnecting' | 'disconnected';
+
 export interface CallJoinOptions {
   roomId: string;
   callId: string;
@@ -16,6 +18,8 @@ export interface CallJoinOptions {
   stage: HTMLElement;
   /** Remote participants only, reported on connect and on every change. */
   onParticipants(participants: CallParticipant[]): void;
+  /** Provider transport state; domain lifecycle remains owned by the controller/server. */
+  onTransportState(state: CallTransportState): void;
 }
 
 export interface CallSession {

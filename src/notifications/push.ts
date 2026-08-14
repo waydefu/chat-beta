@@ -12,6 +12,12 @@ let messaging: Messaging | null = null;
 let currentToken: string | null = null;
 let foregroundUnsub: (() => void) | null = null;
 
+export interface ForegroundCallNotice {
+  roomId: string;
+  callId: string;
+  kind: 'voice' | 'video';
+}
+
 /** Firestore document ids cannot contain '/', which FCM tokens do. */
 function tokenDocId(token: string): string {
   return token.replaceAll('/', '_');
@@ -103,13 +109,24 @@ export async function disablePush(uid: string): Promise<void> {
  * While a tab is focused the browser suppresses the OS notification, so surface
  * foreground pushes through the in-app toast instead.
  */
-export function watchForegroundPush(show: (message: string) => void): void {
+export function watchForegroundPush(
+  show: (message: string) => void,
+  onCall?: (notice: ForegroundCallNotice) => void,
+): void {
   if (!pushConfigured()) return;
   void pushSupported().then(async (supported) => {
     if (!supported) return;
     foregroundUnsub?.();
     const { onMessage } = await import('firebase/messaging');
     foregroundUnsub = onMessage(await ensureMessaging(), (payload) => {
+      if (payload.data?.type === 'call' && payload.data.roomId && payload.data.callId) {
+        onCall?.({
+          roomId: payload.data.roomId,
+          callId: payload.data.callId,
+          kind: payload.data.kind === 'video' ? 'video' : 'voice',
+        });
+        return;
+      }
       const title = payload.notification?.title ?? payload.data?.title ?? '新訊息';
       const body = payload.notification?.body ?? payload.data?.body ?? '';
       show(body ? `${title}：${body}` : title);

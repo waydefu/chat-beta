@@ -1,4 +1,7 @@
+import type { LocalTrack, LocalTrackPublication, RemoteTrack } from 'livekit-client';
+
 import { callFunction } from '../../firebase/callables';
+import { RTC_CALLABLE_OPTIONS } from '../rtc-callable-options';
 import type { CallJoinOptions, CallProvider, CallSession } from './call-provider';
 
 interface LiveKitGrant {
@@ -8,62 +11,140 @@ interface LiveKitGrant {
 
 export class LiveKitCallProvider implements CallProvider {
   async join(options: CallJoinOptions, signal: AbortSignal): Promise<CallSession> {
+    options.onTransportState('connecting');
     const grant = await callFunction<Pick<CallJoinOptions, 'roomId' | 'callId'>, LiveKitGrant>(
-      'getLiveKitToken',
+      'getLiveKitTokenV2',
       { roomId: options.roomId, callId: options.callId },
-      { limitedUseAppCheckTokens: true },
+      RTC_CALLABLE_OPTIONS,
     );
+    signal.throwIfAborted();
     const { Room, RoomEvent, Track } = await import('livekit-client');
     const room = new Room({ adaptiveStream: true, dynacast: true });
-    const stage = options.stage;
-    const disconnect = (): void => { void room.disconnect(); };
-    signal.addEventListener('abort', disconnect, { once: true });
+    const attached = new Set<HTMLElement>();
+    const attachedTracks = new Set<LocalTrack | RemoteTrack>();
+    let leaving: Promise<void> | null = null;
+    let intentionalLeave = false;
 
+    const attachRemote = (track: RemoteTrack): void => {
+      if (attachedTracks.has(track)) return;
+      attachedTracks.add(track);
+      const element = track.attach();
+      attached.add(element);
+      if (track.kind === Track.Kind.Audio) {
+        element.dataset.chatLiteCallAudio = options.callId;
+        element.hidden = true;
+        document.body.append(element);
+        return;
+      }
+      element.className = 'call-video';
+      element.autoplay = true;
+      (element as HTMLVideoElement).playsInline = true;
+      options.stage.append(element);
+    };
+    const attachLocal = (publication: LocalTrackPublication): void => {
+      if (publication.kind !== Track.Kind.Video) return;
+      const track = publication.track;
+      if (!track || attachedTracks.has(track)) return;
+      attachedTracks.add(track);
+      const element = track.attach();
+      if (!element) return;
+      attached.add(element);
+      element.className = 'call-video local';
+      element.muted = true;
+      element.autoplay = true;
+      (element as HTMLVideoElement).playsInline = true;
+      options.stage.append(element);
+    };
+    const detachTrack = (track: RemoteTrack): void => {
+      attachedTracks.delete(track);
+      for (const element of track.detach()) {
+        attached.delete(element);
+        element.remove();
+      }
+    };
+    const detachLocal = (publication: LocalTrackPublication): void => {
+      const track = publication.track;
+      if (!track) return;
+      attachedTracks.delete(track);
+      for (const element of track.detach()) {
+        attached.delete(element);
+        element.remove();
+      }
+    };
     const reportParticipants = (): void => {
       options.onParticipants([...room.remoteParticipants.values()].map((participant) => ({
         identity: participant.identity,
         name: participant.name || participant.identity,
       })));
     };
+    const onReconnecting = (): void => options.onTransportState('reconnecting');
+    const onReconnected = (): void => {
+      options.onTransportState('connected');
+      reportParticipants();
+    };
+    const removeElements = (): void => {
+      for (const element of attached) element.remove();
+      attached.clear();
+      attachedTracks.clear();
+    };
+    const removeListeners = (): void => {
+      room.off(RoomEvent.TrackSubscribed, attachRemote);
+      room.off(RoomEvent.TrackUnsubscribed, detachTrack);
+      room.off(RoomEvent.LocalTrackPublished, attachLocal);
+      room.off(RoomEvent.LocalTrackUnpublished, detachLocal);
+      room.off(RoomEvent.ParticipantConnected, reportParticipants);
+      room.off(RoomEvent.ParticipantDisconnected, reportParticipants);
+      room.off(RoomEvent.Reconnecting, onReconnecting);
+      room.off(RoomEvent.Reconnected, onReconnected);
+      room.off(RoomEvent.Disconnected, onDisconnected);
+      signal.removeEventListener('abort', onAbort);
+    };
+    const onDisconnected = (): void => {
+      removeElements();
+      removeListeners();
+      if (!intentionalLeave) options.onTransportState('disconnected');
+    };
+    const leave = async (): Promise<void> => {
+      if (leaving) return leaving;
+      intentionalLeave = true;
+      leaving = (async () => {
+        try {
+          await room.disconnect();
+        } finally {
+          removeElements();
+          removeListeners();
+        }
+      })();
+      return leaving;
+    };
+    const onAbort = (): void => { void leave(); };
 
-    await room.connect(grant.url, grant.token);
-    room.on(RoomEvent.TrackSubscribed, (track) => {
-      if (track.kind === Track.Kind.Audio) {
-        const element = track.attach();
-        element.dataset.chatLiteCallAudio = 'true';
-        element.hidden = true;
-        document.body.append(element);
-      } else if (track.kind === Track.Kind.Video) {
-        const element = track.attach();
-        element.className = 'call-video';
-        element.autoplay = true;
-        (element as HTMLVideoElement).playsInline = true;
-        stage.append(element);
-      }
-    });
-    room.on(RoomEvent.TrackUnsubscribed, (track) => track.detach().forEach((element) => element.remove()));
+    room.on(RoomEvent.TrackSubscribed, attachRemote);
+    room.on(RoomEvent.TrackUnsubscribed, detachTrack);
+    room.on(RoomEvent.LocalTrackPublished, attachLocal);
+    room.on(RoomEvent.LocalTrackUnpublished, detachLocal);
     room.on(RoomEvent.ParticipantConnected, reportParticipants);
     room.on(RoomEvent.ParticipantDisconnected, reportParticipants);
-    await room.localParticipant.setMicrophoneEnabled(options.audio);
-    await room.localParticipant.setCameraEnabled(options.video);
-    for (const publication of room.localParticipant.videoTrackPublications.values()) {
-      const element = publication.track?.attach();
-      if (!element) continue;
-      element.className = 'call-video local';
-      element.muted = true;
-      element.autoplay = true;
-      (element as HTMLVideoElement).playsInline = true;
-      stage.append(element);
+    room.on(RoomEvent.Reconnecting, onReconnecting);
+    room.on(RoomEvent.Reconnected, onReconnected);
+    room.on(RoomEvent.Disconnected, onDisconnected);
+    signal.addEventListener('abort', onAbort, { once: true });
+
+    try {
+      await room.connect(grant.url, grant.token);
+      signal.throwIfAborted();
+      await room.localParticipant.setMicrophoneEnabled(options.audio);
+      await room.localParticipant.setCameraEnabled(options.video);
+      for (const publication of room.localParticipant.videoTrackPublications.values()) attachLocal(publication);
+      reportParticipants();
+      options.onTransportState('connected');
+    } catch (error) {
+      await leave().catch(() => undefined);
+      throw error;
     }
-    // Anyone already in the room raises no ParticipantConnected for this client,
-    // so report once the connection settles rather than waiting for a change.
-    reportParticipants();
-    room.once(RoomEvent.Disconnected, () => signal.removeEventListener('abort', disconnect));
+
     return {
-      async leave() {
-        await room.disconnect();
-        document.querySelectorAll('[data-chat-lite-call-audio]').forEach((element) => element.remove());
-      },
+      leave,
       async setMicrophone(enabled) { await room.localParticipant.setMicrophoneEnabled(enabled); },
       async setCamera(enabled) { await room.localParticipant.setCameraEnabled(enabled); },
       async setScreenShare(enabled) { await room.localParticipant.setScreenShareEnabled(enabled); },

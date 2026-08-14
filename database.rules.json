@@ -3,6 +3,29 @@
     ".read": false,
     ".write": false,
     "realtime": {
+      "presence": {
+        "$uid": {
+          ".read": "auth != null",
+          "connections": {
+            "$connectionId": {
+              ".write": "auth != null && auth.uid === $uid",
+              ".validate": "!newData.exists() || newData.hasChildren(['state', 'connectedAt', 'updatedAt'])",
+              "state": {
+                ".validate": "newData.val() === 'online' || newData.val() === 'away'"
+              },
+              "connectedAt": {
+                ".validate": "newData.isNumber()"
+              },
+              "updatedAt": {
+                ".validate": "newData.isNumber()"
+              },
+              "$other": {
+                ".validate": false
+              }
+            }
+          }
+        }
+      },
       "rooms": {
         "$roomKey": {
           ".read": "auth != null && data.child('members').child(auth.uid).child('status').val() === 'active'",

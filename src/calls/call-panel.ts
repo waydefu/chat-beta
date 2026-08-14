@@ -1,4 +1,5 @@
 import type { CallParticipant } from './providers/call-provider';
+import { callPhaseLabel, type ClientCallPhase } from './call-state';
 
 export interface CallPanelHandlers {
   microphone(enabled: boolean): Promise<void>;
@@ -28,17 +29,19 @@ function button(label: string, className: string): HTMLButtonElement {
 export class CallPanel {
   readonly stage: HTMLElement;
   private readonly root: HTMLElement;
+  private readonly stateLine: HTMLElement;
   private readonly participantLine: HTMLElement;
   private readonly timer: HTMLElement;
   private readonly micButton: HTMLButtonElement;
   private readonly cameraButton: HTMLButtonElement;
   private readonly screenButton: HTMLButtonElement;
-  private readonly startedAt = Date.now();
-  private readonly tick: number;
+  private startedAt: number | null = null;
+  private tick: number | null = null;
   private microphoneOn = true;
   private cameraOn: boolean;
   private screenShareOn = false;
   private offset: { x: number; y: number } | null = null;
+  private dragCleanup: (() => void) | null = null;
 
   constructor(kind: 'voice' | 'video', private readonly handlers: CallPanelHandlers) {
     this.cameraOn = kind === 'video';
@@ -58,10 +61,21 @@ export class CallPanel {
     this.timer.className = 'call-timer';
     this.timer.textContent = '00:00';
     title.append(heading, this.timer);
+    this.stateLine = document.createElement('p');
+    this.stateLine.className = 'call-state';
+    this.stateLine.setAttribute('aria-live', 'polite');
+    this.stateLine.textContent = callPhaseLabel('creating');
     this.participantLine = document.createElement('p');
     this.participantLine.className = 'call-participants';
     this.participantLine.textContent = '等待對方加入…';
-    head.append(title, this.participantLine);
+    const minimize = button('縮小', 'call-minimize');
+    minimize.setAttribute('aria-label', '縮小通話畫面');
+    minimize.addEventListener('click', () => {
+      const minimized = this.root.classList.toggle('minimized');
+      minimize.textContent = minimized ? '展開' : '縮小';
+      minimize.setAttribute('aria-label', minimized ? '展開通話畫面' : '縮小通話畫面');
+    });
+    head.append(title, this.stateLine, this.participantLine, minimize);
 
     this.stage = document.createElement('div');
     this.stage.className = 'call-videos';
@@ -70,7 +84,9 @@ export class CallPanel {
     controls.className = 'call-controls';
     this.micButton = button('靜音', 'call-control');
     this.cameraButton = button(this.cameraOn ? '關閉鏡頭' : '開啟鏡頭', 'call-control');
+    this.cameraButton.hidden = kind === 'voice';
     this.screenButton = button('分享畫面', 'call-control');
+    this.screenButton.hidden = typeof navigator.mediaDevices?.getDisplayMedia !== 'function';
     const hangUp = button('掛斷', 'call-control call-hangup');
     controls.append(this.micButton, this.cameraButton, this.screenButton, hangUp);
 
@@ -82,6 +98,17 @@ export class CallPanel {
 
     this.root.append(head, this.stage, controls);
     document.body.append(this.root);
+  }
+
+  setState(phase: ClientCallPhase): void {
+    this.root.dataset.callPhase = phase;
+    this.stateLine.textContent = callPhaseLabel(phase);
+  }
+
+  setConnectedAt(connectedAtMs: number): void {
+    if (this.startedAt !== null) return;
+    this.startedAt = connectedAtMs;
+    this.renderElapsed();
     this.tick = window.setInterval(() => this.renderElapsed(), 1000);
   }
 
@@ -92,12 +119,16 @@ export class CallPanel {
   }
 
   destroy(): void {
-    window.clearInterval(this.tick);
+    if (this.tick !== null) window.clearInterval(this.tick);
+    this.tick = null;
+    this.dragCleanup?.();
+    this.dragCleanup = null;
     this.root.remove();
   }
 
   private renderElapsed(): void {
-    const seconds = Math.floor((Date.now() - this.startedAt) / 1000);
+    if (this.startedAt === null) return;
+    const seconds = Math.max(0, Math.floor((Date.now() - this.startedAt) / 1000));
     const minutes = Math.floor(seconds / 60);
     this.timer.textContent = `${String(minutes).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
   }
@@ -131,7 +162,8 @@ export class CallPanel {
    * the right/bottom anchors keep fighting the values being written here.
    */
   private startDrag(event: PointerEvent): void {
-    if (event.button !== 0) return;
+    if (event.button !== 0 || window.matchMedia('(max-width: 720px)').matches) return;
+    this.dragCleanup?.();
     const bounds = this.root.getBoundingClientRect();
     this.offset = { x: event.clientX - bounds.left, y: event.clientY - bounds.top };
     this.root.style.left = `${bounds.left}px`;
@@ -155,9 +187,11 @@ export class CallPanel {
       window.removeEventListener('pointermove', move);
       window.removeEventListener('pointerup', stop);
       window.removeEventListener('pointercancel', stop);
+      this.dragCleanup = null;
     };
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', stop);
     window.addEventListener('pointercancel', stop);
+    this.dragCleanup = stop;
   }
 }

@@ -212,7 +212,7 @@ WebView 的 WebRTC 只接受它自己提供的來源（`getUserMedia` 的相機�
 
 1. 專案目前零原生程式碼，這會是第一個 Capacitor plugin。
 2. MediaProjection 同意流程加前景服務。Android 14 強制「先起前景服務、再要 projection」，順序反了就是 SecurityException；服務型別要宣告 `mediaProjection` 並帶常駐通知。
-3. `getLiveKitToken` 要改。現在簽的 identity 就是 Firebase uid，原生連線用同一個 identity 進同一個房間會被 LiveKit 當成重複身分踢掉，需要另簽 `${uid}_screen` 之類的身分，權限檢查要重驗。
+3. `getLiveKitTokenV2` 要改。現在簽的 identity 就是 Firebase uid，原生連線用同一個 identity 進同一個房間會被 LiveKit 當成重複身分踢掉，需要另簽 `${uid}_screen` 之類的身分，權限檢查要重驗。
 4. JS 與原生兩邊的狀態要同步（掛斷、切背景、通話被他人結束、App 被系統結束），否則會留下還在推畫面的幽靈參與者。
 5. web 端的 `call-stage` 目前假設一個參與者等於一個人，要處理多出來的螢幕分享參與者。
 6. 幾乎無法單元測試，需要真機並涵蓋 Android 13／14／15——前景服務規則每一版都動過。
