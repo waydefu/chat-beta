@@ -14,7 +14,7 @@ This document records the production state after the Chat Lite 3.0 ACL rollout. 
 | Billing account | `017AC8-677C35-503670` |
 | Primary region | `asia-east1` |
 | Production branch | `main` |
-| Deployed commit | `007017f5fe6bf6f676e223861e03780a9fef5fe3` |
+| Deployed commit | `0a369e834b7ce2d6e26c7bd162bd674e45a8116c` |
 | App Check | reCAPTCHA Enterprise key configured; monitor before enforcement |
 | FCM | production VAPID key configured |
 
@@ -97,7 +97,7 @@ Calls V2 (deployed 2026-08-14, `rtc_backend` phase):
 - `cleanupExpiredCallSignals`
 
 Gemini AI (deployed 2026-08-14, `ai_backend` phase, GitHub Actions run
-31798296940):
+31810705398):
 
 - `generateGeminiReply`
 - `cleanupExpiredAIDrafts`
@@ -220,6 +220,8 @@ without its index ships a Function that cannot run.
 - PR #9: upgrade deprecated GitHub Actions runtimes.
 - PR #12: theme the login screen and apply the theme before sign-in.
 - PR #13: scope the provider gate to the phases that deploy providers. `hosting_client` previously required an attestation that could not be answered truthfully while provider secrets remain placeholders, which forced every client-only change out through a manual deploy.
+- PR #34: harden the Gemini path before enabling it (model allowlist, error taxonomy, mention token boundary, draft cleanup pagination).
+- PR #35: add Google Search grounding with source citations to Gemini.
 - The quality-gate workflow passed on production commit `bd58b8f0740ecb69e8cbf9473312564403163747`, including lint, typecheck, unit coverage, Functions tests, Rules tests, E2E, build, and production audit.
 - The manual `Publish GitHub Pages redirect` workflow completed successfully for the previous production commit and the redirect remains live.
 
