@@ -9,6 +9,8 @@ Firestore：
 - room 子集合：messages、readStates、reactions、attachments、aiRequests、calls、bots。
 - `rooms/{roomId}/calls/{callId}`：operation ID、kind、state-machine status、starter、participant confirmations、lease、timestamps 與 terminal outcome。
 - `users/{uid}/incomingCalls/{callId}`：server-written recipient signaling，含 room/call/kind/caller/status/expiry。
+- `pushTokenClaims/{tokenHash}`：server-only canonical FCM ownership；`tokenHash=sha256(token)`，保存uid、token、userAgent、schemaVersion與timestamps。
+- `users/{uid}/pushTokens/{tokenHash}`：server-written owner-private mirror；不是authorization source，client不可寫。
 - global：users、bots、directRoomKeys、rateLimits。
 
 RTDB：
@@ -27,5 +29,7 @@ Global Presence connection 保存 `state`、`connectedAt`、`updatedAt`；multi-
 `roomKey` 是 UTF-8 room ID 的 base64url。RTDB members 是 room ephemeral ACL 的 authorization mirror，不是 membership 查詢來源。`membershipVersions` 是 server-only monotonic tombstone/operation guard，避免 stale add event 覆蓋較新的撤銷。Legacy `realtime/rooms/{roomKey}/presence` 在 additive migration window 暫留 Rules，但新版 client 不再讀寫；驗證流量歸零後必須移除。
 
 Message 以 `kind` 判別 text、image、video、file、audio、sticker、system、call。client 可直接建立的永久訊息只有 `senderType=user` 的 text；其他受信任 metadata 由 Functions 建立。
+
+Client的message store分離moving live window與已載入historical pages，兩者合併到normalized ID map並以createdAt/id穩定排序。`rooms/{roomId}/readStates/{uid}`和`users/{uid}/roomStates/{roomId}`仍是mirrors，但每次read advancement由同一write batch原子提交。
 
 Built-in sticker 使用版本化 pack ID。Custom sticker object 位於 R2，`users/{uid}/stickerPacks/custom-v1` 只保存 server-written metadata；訊息仍只引用 `stickerPackId`／`stickerId`。下載 callable 同時驗證 active room membership、訊息引用與 sticker ready 狀態，metadata 刪除後 renderer 顯示 unavailable fallback。

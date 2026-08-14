@@ -11,6 +11,8 @@ on:
         options:
           - additive_backend
           - notification_backend
+          - push_ownership_backend
+          - push_sender_backend
           - rtc_backend
           - ai_backend
           - feature_backend
@@ -24,6 +26,11 @@ on:
         default: false
       providers_verified:
         description: Confirm provider secrets/configuration and staging smoke tests are complete
+        required: true
+        type: boolean
+        default: false
+      push_adoption_verified:
+        description: Confirm Hosting adoption and canonical push ownership smoke tests are complete
         required: true
         type: boolean
         default: false
@@ -77,25 +84,37 @@ jobs:
           # give. Every phase is scoped by --only, so --force cannot delete a function
           # outside the list it was handed.
           MEMBERSHIP_FUNCTIONS="functions:createDirectRoom,functions:createOrJoinPublicRoom,functions:revokeRoomMember,functions:syncMembershipMirror,functions:reconcileMembershipMirrors"
-          NOTIFICATION_FUNCTIONS="functions:notifyOnMessage,functions:sendStickerMessage"
+          PUSH_OWNERSHIP_FUNCTIONS="functions:claimPushToken,functions:releasePushToken,functions:cleanupStalePushTokens"
+          PUSH_SENDER_FUNCTIONS="functions:notifyOnMessage,functions:syncCallSignals"
+          NOTIFICATION_FUNCTIONS="$PUSH_OWNERSHIP_FUNCTIONS,functions:notifyOnMessage,functions:sendStickerMessage"
           RTC_FUNCTIONS="functions:startLiveKitCallV2,functions:getLiveKitTokenV2,functions:confirmLiveKitCall,functions:respondLiveKitCall,functions:heartbeatLiveKitCall,functions:failLiveKitCall,functions:endLiveKitCallV2,functions:cleanupStaleLiveKitCalls,functions:syncCallSignals,functions:cleanupExpiredCallSignals"
           AI_FUNCTIONS="functions:generateGeminiReply,functions:cleanupExpiredAIDrafts"
-          V3_FUNCTIONS="$MEMBERSHIP_FUNCTIONS,$RTC_FUNCTIONS,functions:generateGeminiReply,functions:cleanupExpiredAIDrafts,functions:cleanupExpiredUploads,functions:cleanupOrphanR2Objects,functions:finalizeUpload,functions:getAttachmentDownloadUrl,functions:requestUpload,functions:notifyOnMessage,functions:searchMessages,functions:syncMessageSearchIndex,functions:cleanupExpiredCustomStickerUploads,functions:deleteCustomSticker,functions:finalizeCustomStickerUpload,functions:getCustomStickerDownloadUrl,functions:requestCustomStickerUpload,functions:sendStickerMessage"
+          V3_FUNCTIONS="$MEMBERSHIP_FUNCTIONS,$RTC_FUNCTIONS,$NOTIFICATION_FUNCTIONS,functions:generateGeminiReply,functions:cleanupExpiredAIDrafts,functions:cleanupExpiredUploads,functions:cleanupOrphanR2Objects,functions:finalizeUpload,functions:getAttachmentDownloadUrl,functions:requestUpload,functions:searchMessages,functions:syncMessageSearchIndex,functions:cleanupExpiredCustomStickerUploads,functions:deleteCustomSticker,functions:finalizeCustomStickerUpload,functions:getCustomStickerDownloadUrl,functions:requestCustomStickerUpload"
           case "$ROLLOUT_PHASE" in
             additive_backend)
               pnpm exec firebase deploy --project f-chat-wayde-fu --force --only "firestore:indexes,$MEMBERSHIP_FUNCTIONS"
               ;;
             notification_backend)
-              # No provider gate. Neither function declares a secret, so there is
-              # no provider readiness that could be attested here truthfully.
+              # Backward-compatible phase name. It now establishes ownership before
+              # the canonical sender is enabled; use push_sender_backend after adoption.
               test "$MIGRATION_VERIFIED" = "true"
-              pnpm exec firebase deploy --project f-chat-wayde-fu --force --only "$NOTIFICATION_FUNCTIONS"
+              pnpm exec firebase deploy --project f-chat-wayde-fu --force --only "$PUSH_OWNERSHIP_FUNCTIONS,functions:sendStickerMessage"
+              ;;
+            push_ownership_backend)
+              test "$MIGRATION_VERIFIED" = "true"
+              pnpm exec firebase deploy --project f-chat-wayde-fu --force --only "$PUSH_OWNERSHIP_FUNCTIONS"
+              ;;
+            push_sender_backend)
+              test "$MIGRATION_VERIFIED" = "true"
+              test "${{ inputs.push_adoption_verified }}" = "true"
+              pnpm exec firebase deploy --project f-chat-wayde-fu --force --only "$PUSH_SENDER_FUNCTIONS"
               ;;
             rtc_backend)
               # Scoped provider gate: this attests LiveKit only. feature_backend
               # keeps the whole-fleet gate for the phase that deploys all of them.
               test "$MIGRATION_VERIFIED" = "true"
               test "${{ inputs.providers_verified }}" = "true"
+              test "${{ inputs.push_adoption_verified }}" = "true"
               pnpm exec firebase deploy --project f-chat-wayde-fu --force --only "$RTC_FUNCTIONS"
               ;;
             ai_backend)
@@ -110,6 +129,7 @@ jobs:
             feature_backend)
               test "$MIGRATION_VERIFIED" = "true"
               test "${{ inputs.providers_verified }}" = "true"
+              test "${{ inputs.push_adoption_verified }}" = "true"
               pnpm exec firebase deploy --project f-chat-wayde-fu --force --only "$V3_FUNCTIONS"
               ;;
             hosting_client)
@@ -122,11 +142,13 @@ jobs:
               ;;
             restrictive_rules)
               test "$MIGRATION_VERIFIED" = "true"
+              test "${{ inputs.push_adoption_verified }}" = "true"
               pnpm exec firebase deploy --project f-chat-wayde-fu --only firestore:rules,database
               ;;
             full_post_migration)
               test "$MIGRATION_VERIFIED" = "true"
               test "${{ inputs.providers_verified }}" = "true"
+              test "${{ inputs.push_adoption_verified }}" = "true"
               test -n "$VITE_FCM_VAPID_KEY"
               test -n "$VITE_APP_CHECK_SITE_KEY"
               pnpm exec firebase deploy --project f-chat-wayde-fu --force --only "firestore:rules,firestore:indexes,database,hosting,$V3_FUNCTIONS"

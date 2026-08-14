@@ -86,6 +86,10 @@ No confirmed P0 was found in the audited source. Provider credentials remain ser
 | P2-17 | Several cleanup jobs use whole collection-group/R2 prefix scans or have no durable checkpoint (`stickers/messages.ts`, `media/uploads.ts`). | Runtime/cost grows without bound and partial work restarts from zero. | PR 3 / PR 5 |
 | P2-18 | One moderate production dependency advisory is present. | Not a high-threshold release blocker, but must be identified and resolved or accepted with evidence. | PR 4 |
 
+### PR 2 closure status
+
+P1-10 through P1-15 and P2-05/P2-06 are resolved on the PR 2 implementation branch: the normalized store retains historical pages when the live query window advances; keyed rows isolate message/read/reaction/call updates; read mirrors use one batch; room queries are bounded and private metadata is fetched in `in` chunks; Push ownership is a server transaction keyed by a SHA-256 token hash; notification copy is redacted; and offline revocation waits for pending writes before terminating Firestore and clearing IndexedDB. The Rules and rollout are intentionally incompatible with the old client write path, so production must follow the additive callable → Hosting adoption → sender/Rules sequence in `docs/MIGRATION.md`.
+
 ### P3 Low
 
 | ID | Finding | Planned owner |

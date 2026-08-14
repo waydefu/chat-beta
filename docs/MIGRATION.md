@@ -66,6 +66,30 @@ pnpm --filter chat-lite-functions migrate:v3 -- `
 
 首次啟用前，對現有 `rooms/*/calls` 做 bounded read-only inventory。沒有 lease／room pointer 的舊 active call以 `startedAt + 4 hours`作 migration grace：grace內會阻擋同房 V2 start，避免新舊 client同時建立兩通；過期後由 bounded cleanup或 start fallback terminalize。若同房有 10筆以上 live legacy call，start會 `CALL_INVARIANT_REPAIR_REQUIRED` fail closed，必須人工審核後再啟用。
 
+## Messages + Push + Offline migration
+
+Message store、keyed renderer、原子read batch和bounded room query不改server schema，可隨Hosting rollback。Push會新增canonical registry並收緊Rules，必須additive-first：
+
+1. 記錄目前Functions/Rules/Hosting release與`APP_CHECK_ENFORCED_FEATURES`。先部署`claimPushToken`、`releasePushToken`、`cleanupStalePushTokens`，暫時不要部署新版sender或Rules；此時舊client仍可工作。
+2. `notifications`先維持App Check monitor。用staging驗證claim idempotent、同一browser由A切B時canonical owner轉移、logout release，以及無效token不出現在log。
+3. 部署Hosting。新版client登入或token refresh時claim；關閉Push、登出、permission revoke時release。觀察`pushTokenClaims` adoption，確認同一hash只有一個owner，且user mirror的`ownershipVersion=1`。
+4. adoption gate通過後，部署`notifyOnMessage`和使用同一registry的`syncCallSignals`，最後才部署Firestore Rules禁止client直寫`users/{uid}/pushTokens`。舊token文件從此不再是sender source；claim/release會順帶刪已知legacy document ID。
+5. 在兩帳號、兩browser、前景/背景、muted room、active room、call與chat各跑一次smoke。lock-screen copy不得包含聊天本文。確認`push.token.claim`、`push.token.release`、`push.chat.send`、`push.token.cleanup`只有structured metadata，沒有token或message content。
+6. trusted offline revoke另做multi-tab smoke：先送完pending write，再關閉設定；單tab應回報cleared。第二tab仍開啟時必須顯示pending且下一次啟動使用memory cache；關閉第二tab後按重試才可顯示cleared。離線時不得清除或宣稱成功。
+
+對應workflow順序如下；`push_adoption_verified`只能在第3步smoke與metrics完成後設為true：
+
+```bash
+gh workflow run "Deploy Firebase production" --repo waydefu/chat-beta -f rollout_phase=push_ownership_backend -f migration_verified=true -f providers_verified=false -f push_adoption_verified=false
+gh workflow run "Deploy Firebase production" --repo waydefu/chat-beta -f rollout_phase=hosting_client -f migration_verified=true -f providers_verified=false -f push_adoption_verified=false
+gh workflow run "Deploy Firebase production" --repo waydefu/chat-beta -f rollout_phase=push_sender_backend -f migration_verified=true -f providers_verified=false -f push_adoption_verified=true
+gh workflow run "Deploy Firebase production" --repo waydefu/chat-beta -f rollout_phase=restrictive_rules -f migration_verified=true -f providers_verified=false -f push_adoption_verified=true
+```
+
+**MANUAL PRODUCTION STEP**：部署帳號需要Cloud Scheduler權限才能建立`cleanupStalePushTokens`。若要把`notifications`加入`APP_CHECK_ENFORCED_FEATURES`，必須先確認合法claim/release metrics和Android provider策略；不得與首次client rollout同時強制。
+
+建議明確部署順序：Push ownership Functions → Hosting → adoption/metrics gate → chat/call sender Functions → restrictive Firestore Rules。rollback時，additive claim資料可安全保留；若只回滾Hosting，不能回到會直接寫token的舊client而同時保留restrictive Rules。sender可先回滾到前一版，Rules/Hosting應成對選擇相容release，不得為了方便臨時開放global claims。
+
 ## 4. 驗證與分階段發布
 
 1. 等待 `syncMembershipMirror`，再觀察至少一次 `reconcileMembershipMirrors`；比較 active membership、user room index、operation journal 與 RTDB mirror。
