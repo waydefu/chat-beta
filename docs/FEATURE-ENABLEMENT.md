@@ -252,7 +252,7 @@ gh workflow run "Deploy Firebase production" --repo waydefu/chat-beta -f rollout
 
 ### 7.5 驗收
 
-1. 在訊息裡用 `@` 選單提及 Gemini（**打字打出「Gemini」不會觸發**，只有結構化的提及才算），送出後應看到逐字串流的回覆。
+1. 在訊息裡提及 Gemini，送出後應看到逐字串流的回覆。**用 `@` 選單挑選，或直接手打 `@Gemini`，兩者都會觸發** —— client 是以文字比對 `@Gemini` 產生結構化提及的（`src/messages/message.service.ts`）。不含 `@` 的「Gemini」不會觸發，`@GeminiTest` 這類延伸字串也不會（token boundary 檢查）。
 2. 串流中按取消，草稿應消失且不留下最終訊息。
 3. 另一個帳號在同一房間應看得到生成中的草稿。
 4. Firestore `rooms/{roomId}/aiRequests/{runId}` 有 status、usage、latency、model 紀錄。

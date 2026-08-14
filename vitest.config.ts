@@ -14,6 +14,7 @@ export default defineConfig({
         'src/calls/rtc-callable-options.ts',
         'src/firebase/offline-policy.ts',
         'src/messages/message-store.ts',
+        'src/messages/message.service.ts',
         'src/realtime/presence-state.ts',
         'src/realtime/realtime.repository.ts',
       ],

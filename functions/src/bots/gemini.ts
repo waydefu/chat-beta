@@ -1,5 +1,6 @@
 import { GoogleGenAI, type Content } from '@google/genai';
 import { FieldValue, Timestamp } from 'firebase-admin/firestore';
+import { logger } from 'firebase-functions';
 import { HttpsError, onCall } from 'firebase-functions/v2/https';
 
 import { database, firestore } from '../admin.js';
@@ -7,6 +8,7 @@ import { appCheckEnforced, geminiApiKey, REGION } from '../config.js';
 import { requireAuth, requireRecord, requireString, roomKey } from '../shared/validation.js';
 import { buildBotContext } from './context-builder.js';
 import { BotPermissionService, BotRateLimiter, BotRegistry, BotRouter } from './framework.js';
+import { aiErrorMessage, classifyProviderError, safeErrorFields, type AiErrorCode } from './ai-errors.js';
 import { stableGeminiModel } from './model-config.js';
 
 const BOT_ID = 'gemini';
@@ -35,6 +37,16 @@ function generationContents(context: Array<{ sender: string; text: string }>, pr
   ];
 }
 
+function domainCodeOf(error: unknown, aborted: boolean): AiErrorCode {
+  if (error instanceof HttpsError) {
+    const declared = (error.details as { code?: unknown } | undefined)?.code;
+    if (typeof declared === 'string') return declared as AiErrorCode;
+    if (error.code === 'permission-denied') return 'AI_PERMISSION_DENIED';
+    if (error.code === 'resource-exhausted') return 'AI_RATE_LIMITED';
+  }
+  return classifyProviderError(error, aborted);
+}
+
 export const generateGeminiReply = onCall(
   {
     region: REGION,
@@ -56,7 +68,8 @@ export const generateGeminiReply = onCall(
     const requestRef = firestore.doc(`rooms/${roomId}/aiRequests/${runId}`);
     const messageRef = firestore.doc(`rooms/${roomId}/messages/ai_${runId}`);
     const now = Date.now();
-    const configuredModel = await stableGeminiModel(now);
+    const modelChoice = await stableGeminiModel(now);
+    const configuredModel = modelChoice.model;
     const lease = await firestore.runTransaction(async (transaction) => {
       const snapshot = await transaction.get(requestRef);
       const existing = snapshot.data();
@@ -64,7 +77,7 @@ export const generateGeminiReply = onCall(
         return { alreadyComplete: true, attempt: Number(existing.attempt || 1), model: String(existing.model || configuredModel) };
       }
       if (existing?.status === 'running' && existing.leaseExpiresAt?.toMillis?.() > now) {
-        throw new HttpsError('already-exists', 'Gemini 已經在處理這則訊息。');
+        throw new HttpsError('already-exists', aiErrorMessage('AI_ALREADY_RUNNING'), { code: 'AI_ALREADY_RUNNING' });
       }
       const attempt = Number(existing?.attempt || 0) + 1;
       transaction.set(requestRef, {
@@ -115,7 +128,7 @@ export const generateGeminiReply = onCall(
         });
       }
       if ((tokenCount.totalTokens ?? 0) > INPUT_TOKEN_BUDGET) {
-        throw new HttpsError('invalid-argument', '訊息超過 AI 的 24k input-token 上限。');
+        throw new HttpsError('invalid-argument', aiErrorMessage('AI_CONTEXT_TOO_LARGE'), { code: 'AI_CONTEXT_TOO_LARGE' });
       }
       const stream = await ai.models.generateContentStream({
         model: lease.model,
@@ -124,12 +137,11 @@ export const generateGeminiReply = onCall(
           abortSignal: abortController.signal,
           systemInstruction: SYSTEM_INSTRUCTION,
           maxOutputTokens: 2048,
-          temperature: 0.4,
         },
       });
 
       for await (const chunk of stream) {
-        if (abortController.signal.aborted) throw new HttpsError('cancelled', 'AI 回覆已取消。');
+        if (abortController.signal.aborted) throw new HttpsError('cancelled', aiErrorMessage('AI_CANCELLED'), { code: 'AI_CANCELLED' });
         const text = chunk.text ?? '';
         if (chunk.usageMetadata) {
           usage = {
@@ -200,23 +212,60 @@ export const generateGeminiReply = onCall(
         updatedAt: Date.now(),
         expiresAt: Date.now() + 30_000,
       }).catch(() => undefined);
+      logger.info('Gemini generation complete', {
+        operation: 'ai.generate',
+        result: 'complete',
+        runId,
+        roomId,
+        model: lease.model,
+        modelSource: modelChoice.source,
+        attempt: lease.attempt,
+        latencyMs: Date.now() - started,
+        ...(usage ? { usage } : {}),
+      });
       return { runId, finalMessageId: messageRef.id, model: lease.model, replayed: false };
     } catch (error) {
+      const aborted = abortController.signal.aborted;
+      const domainCode = domainCodeOf(error, aborted);
+      const status = aborted || domainCode === 'AI_CANCELLED' ? 'cancelled' : 'failed';
       await draftRef.set({
         runId,
         botId: BOT_ID,
-        status: abortController.signal.aborted ? 'cancelled' : 'failed',
+        status,
         updatedAt: Date.now(),
         expiresAt: Date.now() + 30_000,
       }).catch(() => undefined);
       await requestRef.set({
-        status: abortController.signal.aborted ? 'cancelled' : 'failed',
-        failureCategory: error instanceof HttpsError ? error.code : 'provider',
+        status,
+        failureCategory: domainCode,
         latencyMs: Date.now() - started,
         updatedAt: FieldValue.serverTimestamp(),
         leaseExpiresAt: FieldValue.delete(),
       }, { merge: true });
-      throw error;
+      logger.error('Gemini generation failed', {
+        operation: 'ai.generate',
+        result: status,
+        runId,
+        roomId,
+        model: lease.model,
+        modelSource: modelChoice.source,
+        attempt: lease.attempt,
+        errorCategory: domainCode,
+        latencyMs: Date.now() - started,
+        ...safeErrorFields(error),
+      });
+      // Never re-throw the provider error: its message and details quote the
+      // request, which is the user's chat content.
+      if (error instanceof HttpsError) throw error;
+      throw new HttpsError(
+        domainCode === 'AI_RATE_LIMITED' ? 'resource-exhausted'
+          : domainCode === 'AI_CANCELLED' ? 'cancelled'
+            : domainCode === 'AI_TIMEOUT' ? 'deadline-exceeded'
+              : domainCode === 'AI_CONFIGURATION_ERROR' ? 'failed-precondition'
+                : 'unavailable',
+        aiErrorMessage(domainCode),
+        { code: domainCode },
+      );
     } finally {
       if (concurrencyAcquired) {
         await botRateLimiter.release(runId, auth.uid, roomId).catch(() => undefined);
