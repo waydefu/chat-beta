@@ -95,6 +95,7 @@ gh workflow run "Deploy Firebase production" --repo waydefu/chat-beta -f rollout
 `main` 上 RTC V2（PR #25）與 Push ownership（PR #26）尚未發布，兩者會在同一次 rollout 上線。上面兩節各自的順序合起來會互相卡住，實際順序以本節為準：
 
 - 新 client 呼叫 `startLiveKitCallV2` 等 V2 callable，所以 `rtc_backend` 必須早於 `hosting_client`。
+- `rtc_backend` 現在會一併部署 `firestore:indexes`。2026-08-14 的 rollout 沒有跑 `additive_backend`，`cleanupStaleLiveKitCalls` 需要的 `status + leaseExpiresAt` 與 `status + startedAt` 兩個複合索引因此沒進線上，排程每次執行都以 `FAILED_PRECONDITION` 失敗。索引要跟著查詢它的 Function 一起走，不可依賴另一個 phase。
 - `push_adoption_verified` 要等新 client 上線後才量得到，所以它不能是 `rtc_backend` 的前置條件。RTC 之中只有 `syncCallSignals` 依賴 canonical push registry，它已改由 `push_sender_backend` 部署。
 - 新 client 只寫 global Presence，RTDB additive rules 必須早於 `hosting_client`；但同一次的 `firestore.rules` 已禁止 client 直寫 `users/{uid}/pushTokens`，那一條必須等 adoption。因此 RTDB 與 Firestore Rules 拆成兩個 phase：`additive_rules` 只送 `--only database`，Firestore Rules 留到最後的 `restrictive_rules`。
 - `users/{uid}/incomingCalls` 的讀取權限在 `restrictive_rules` 才開。這不影響功能：寫入該路徑的 `syncCallSignals` 同樣在 `push_sender_backend` 才上線，兩步之間只有一個沒有資料可讀的空窗，`restrictive_rules` 應緊接其後執行。

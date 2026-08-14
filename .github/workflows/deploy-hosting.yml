@@ -119,7 +119,14 @@ jobs:
               # client that calls it, which is before adoption can be measured.
               test "$MIGRATION_VERIFIED" = "true"
               test "${{ inputs.providers_verified }}" = "true"
-              pnpm exec firebase deploy --project f-chat-wayde-fu --force --only "$RTC_FUNCTIONS"
+              # Indexes ship with the Functions that query them. cleanupStaleLiveKitCalls
+              # queries calls by status + leaseExpiresAt and status + startedAt, and both
+              # composite indexes are declared in firestore.indexes.json. Deploying this
+              # phase without them leaves the scheduled stale-call recovery failing every
+              # run with FAILED_PRECONDITION, which is exactly the recovery path this
+              # backend exists to provide. additive_backend was the only phase carrying
+              # indexes, and nothing in the RTC runbook order requires it to run first.
+              pnpm exec firebase deploy --project f-chat-wayde-fu --force --only "firestore:indexes,$RTC_FUNCTIONS"
               ;;
             ai_backend)
               # Scoped provider gate: this attests Gemini only. The generation
