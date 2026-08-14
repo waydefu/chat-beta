@@ -74,14 +74,14 @@ done
 要部署 Rules、RTDB 或 Functions 時再加。以下這份清單是 2026-08-13 第一次用 workflow 部署 Functions 時實際跑出來的結果，不是推測：
 
 ```bash
-for role in roles/firebaserules.admin roles/firebasedatabase.admin roles/cloudfunctions.developer roles/iam.serviceAccountUser roles/artifactregistry.writer roles/run.admin roles/eventarc.developer roles/secretmanager.admin roles/firebaseextensions.viewer roles/datastore.viewer roles/cloudscheduler.admin; do
+for role in roles/firebaserules.admin roles/firebasedatabase.admin roles/cloudfunctions.developer roles/iam.serviceAccountUser roles/artifactregistry.writer roles/run.admin roles/eventarc.developer roles/secretmanager.admin roles/firebaseextensions.viewer roles/datastore.viewer roles/cloudscheduler.admin roles/datastore.indexAdmin; do
   gcloud projects add-iam-policy-binding f-chat-wayde-fu \
     --member="serviceAccount:github-deploy@f-chat-wayde-fu.iam.gserviceaccount.com" \
     --role="$role" --condition=None >/dev/null
 done
 ```
 
-後六個當初都不在清單上，是靠讓部署失敗、讀錯誤訊息一個一個補出來的：
+後七個當初都不在清單上，是靠讓部署失敗、讀錯誤訊息一個一個補出來的：
 
 | 角色 | 為什麼需要 |
 | --- | --- |
@@ -91,10 +91,11 @@ done
 | `firebaseextensions.viewer` | CLI 在任何 Functions 部署都會列舉 Extensions 實例 |
 | `datastore.viewer` | Firestore 觸發器需要讀資料庫 metadata |
 | `cloudscheduler.admin` | 排程 Function 的更新。`additive_backend` 就會踩到，因為 `reconcileMembershipMirrors` 是每 15 分鐘執行的排程 |
+| `datastore.indexAdmin` | 建立 Firestore 複合索引。`datastore.viewer` 只能讀，送 `firestore:indexes` 會拿到 `HTTP Error: 403, The caller does not have permission`。2026-08-14 才浮出來：在那之前索引都是 2026-08-12 從 Cloud Shell 以個人憑證部署的，WIF 帳號從未實際送過索引 |
 
 `secretmanager.admin` 的範圍偏大。較窄的替代方案是預先把 `roles/secretmanager.secretAccessor` 授給 Functions 的 runtime service account，部署帳號降為 `roles/secretmanager.viewer`。目前採用的是前者。
 
-這份清單涵蓋 `additive_backend`、`notification_backend`、`push_ownership_backend`、`push_sender_backend`、`rtc_backend`、`ai_backend`、`hosting_client`。`cleanupStalePushTokens`與RTC cleanup都需要Cloud Scheduler；若新排程仍回報權限錯誤，同樣先讀精確錯誤、只補那一項並把結果寫回這張表，不可改用個人憑證繞過。
+這份清單涵蓋 `additive_backend`、`notification_backend`、`push_ownership_backend`、`push_sender_backend`、`rtc_backend`、`ai_backend`、`hosting_client`。凡是會送 `firestore:indexes` 的 phase（`additive_backend`、`rtc_backend`、`full_post_migration`）都需要 `datastore.indexAdmin`。`cleanupStalePushTokens`與RTC cleanup都需要Cloud Scheduler；若新排程仍回報權限錯誤，同樣先讀精確錯誤、只補那一項並把結果寫回這張表，不可改用個人憑證繞過。
 
 這份角色清單是起點而非定論。Functions 部署常會再要求額外權限，正確做法是讓部署失敗、讀錯誤訊息指名的權限再補，而不是預先大範圍授權。
 
