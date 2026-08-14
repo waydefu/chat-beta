@@ -113,31 +113,50 @@ Completed, all runs successful:
 2. `rtc_backend` — run 31770272284
 3. `additive_rules` (RTDB rules only) — run 31770483822
 4. `hosting_client` — run 31770722616
+5. `push_sender_backend` — run 31772615042
+6. `restrictive_rules` — run 31772855456
+
+The rollout is complete. `notifyOnMessage` was updated onto the canonical
+registry, `syncCallSignals` was created, and both Firestore and RTDB Rules are
+now at the restrictive release. Neither sender logged an error after rollout.
 
 The shipped bundle was verified against production: `call.service` carries the
 V2 call callables, `livekit-call-provider` carries `getLiveKitTokenV2`, the push
 chunk carries `claimPushToken`/`releasePushToken`, and the realtime repository
 writes `realtime/presence`.
 
-**Not yet done.** Three items remain and they are blocking, not optional:
+#### What `push_adoption_verified=true` rested on
 
-- The push adoption gate. `push_sender_backend` and `restrictive_rules` must not
-  run until `pushTokenClaims` shows one owner per token hash, the user mirrors
-  read `ownershipVersion: 1`, and the two-account/two-browser smoke in
-  MIGRATION step 5 has passed.
-- `notifyOnMessage` is still the pre-registry sender and `syncCallSignals` is not
-  deployed, so incoming call ringing does not work yet. This is expected between
-  step 4 and step 6, not a defect to debug.
-- Client writes to `users/{uid}/pushTokens` are still permitted by the live
-  Firestore Rules, and `users/{uid}/incomingCalls` reads are still denied. Both
-  land in `restrictive_rules`, which should follow `push_sender_backend`
-  immediately.
+The flag was set on production log evidence, not on the full checklist in
+MIGRATION step 3. What was confirmed from `claimPushToken` and
+`releasePushToken` logs before the sender shipped:
 
-The read-only inventory of legacy `rooms/*/calls` that MIGRATION requires before
-first V2 use was not run; it needs production credentials. Production holds one
-room with three members, so a room carrying ten or more live legacy calls — the
-condition that makes a V2 start fail closed with
-`CALL_INVARIANT_REPAIR_REQUIRED` — is not plausible, but the check is still owed.
+- Four claims, every one `result: complete`, with App Check and auth both
+  `VALID`.
+- One release with `released: true`, in a claim → release → claim sequence,
+  which is the logout-then-switch-account path.
+- Structured metadata only. No token value and no message content appeared in
+  any log line.
+
+What was **not** verified, and is still owed: a direct read of
+`pushTokenClaims` confirming one owner per token hash, and `ownershipVersion: 1`
+on the user mirrors. Both need Firestore admin credentials. Every claim logged
+`replacedOwner: false`, so the takeover path — B claiming a token still owned by
+A without an intervening release — has no production evidence either.
+
+The read-only inventory of legacy `rooms/*/calls` was never run. It stopped
+mattering during the rollout: the operator confirmed the existing production
+room is disposable and intends to create a new one, so the
+`CALL_INVARIANT_REPAIR_REQUIRED` fail-closed path has nothing to protect.
+
+#### Owed follow-up
+
+- Verify the `pushTokenClaims` invariant and mirror `ownershipVersion` from an
+  authenticated environment, and exercise the `replacedOwner: true` takeover
+  path once.
+- Observe for 24 hours, then hold the seven-day gate before removing the legacy
+  RTC trio, `realtime/rooms/{roomKey}/presence` and the legacy push token
+  documents. Earliest cleanup is 2026-08-21.
 
 ### Rules and Hosting
 
