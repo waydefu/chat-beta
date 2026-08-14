@@ -78,9 +78,9 @@ jobs:
           # outside the list it was handed.
           MEMBERSHIP_FUNCTIONS="functions:createDirectRoom,functions:createOrJoinPublicRoom,functions:revokeRoomMember,functions:syncMembershipMirror,functions:reconcileMembershipMirrors"
           NOTIFICATION_FUNCTIONS="functions:notifyOnMessage,functions:sendStickerMessage"
-          RTC_FUNCTIONS="functions:startLiveKitCall,functions:getLiveKitToken,functions:endLiveKitCall"
+          RTC_FUNCTIONS="functions:startLiveKitCallV2,functions:getLiveKitTokenV2,functions:confirmLiveKitCall,functions:respondLiveKitCall,functions:heartbeatLiveKitCall,functions:failLiveKitCall,functions:endLiveKitCallV2,functions:cleanupStaleLiveKitCalls,functions:syncCallSignals,functions:cleanupExpiredCallSignals"
           AI_FUNCTIONS="functions:generateGeminiReply,functions:cleanupExpiredAIDrafts"
-          V3_FUNCTIONS="$MEMBERSHIP_FUNCTIONS,functions:generateGeminiReply,functions:cleanupExpiredAIDrafts,functions:cleanupExpiredUploads,functions:cleanupOrphanR2Objects,functions:finalizeUpload,functions:getAttachmentDownloadUrl,functions:requestUpload,functions:endLiveKitCall,functions:getLiveKitToken,functions:startLiveKitCall,functions:notifyOnMessage,functions:searchMessages,functions:syncMessageSearchIndex,functions:cleanupExpiredCustomStickerUploads,functions:deleteCustomSticker,functions:finalizeCustomStickerUpload,functions:getCustomStickerDownloadUrl,functions:requestCustomStickerUpload,functions:sendStickerMessage"
+          V3_FUNCTIONS="$MEMBERSHIP_FUNCTIONS,$RTC_FUNCTIONS,functions:generateGeminiReply,functions:cleanupExpiredAIDrafts,functions:cleanupExpiredUploads,functions:cleanupOrphanR2Objects,functions:finalizeUpload,functions:getAttachmentDownloadUrl,functions:requestUpload,functions:notifyOnMessage,functions:searchMessages,functions:syncMessageSearchIndex,functions:cleanupExpiredCustomStickerUploads,functions:deleteCustomSticker,functions:finalizeCustomStickerUpload,functions:getCustomStickerDownloadUrl,functions:requestCustomStickerUpload,functions:sendStickerMessage"
           case "$ROLLOUT_PHASE" in
             additive_backend)
               pnpm exec firebase deploy --project f-chat-wayde-fu --force --only "firestore:indexes,$MEMBERSHIP_FUNCTIONS"

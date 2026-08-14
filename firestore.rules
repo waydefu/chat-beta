@@ -217,6 +217,11 @@ service cloud.firestore {
         allow delete: if signedIn() && request.auth.uid == userId;
       }
 
+      match /incomingCalls/{callId} {
+        allow read: if signedIn() && request.auth.uid == userId;
+        allow write: if false;
+      }
+
       match /roomStates/{roomId} {
         allow read: if signedIn() && request.auth.uid == userId;
         allow create, delete: if false;

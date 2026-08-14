@@ -235,3 +235,63 @@ describe('Realtime Database room ACL', () => {
     }));
   });
 });
+
+describe('Global presence ACL', () => {
+  it('allows multi-tab self connections without exposing a readable global directory', async () => {
+    const alice = testDatabase(environment.authenticatedContext('alice'));
+    const bob = testDatabase(environment.authenticatedContext('bob'));
+    const anonymous = testDatabase(environment.unauthenticatedContext());
+    const first = { state: 'online', connectedAt: Date.now(), updatedAt: Date.now() };
+    const second = { state: 'online', connectedAt: Date.now(), updatedAt: Date.now() };
+
+    await assertSucceeds(set(ref(alice, 'realtime/presence/alice/connections/tab-1'), first));
+    await assertSucceeds(set(ref(alice, 'realtime/presence/alice/connections/tab-2'), second));
+    await assertSucceeds(set(ref(alice, 'realtime/presence/alice/connections/tab-1'), null));
+    await assertSucceeds(get(ref(bob, 'realtime/presence/alice')));
+    await assertFails(get(ref(alice, 'realtime/presence')));
+    await assertFails(get(ref(anonymous, 'realtime/presence/alice')));
+  });
+
+  it('rejects cross-user writes and malformed connection state', async () => {
+    const alice = testDatabase(environment.authenticatedContext('alice'));
+    await assertFails(set(ref(alice, 'realtime/presence/bob/connections/tab-1'), {
+      state: 'online', connectedAt: Date.now(), updatedAt: Date.now(),
+    }));
+    await assertFails(set(ref(alice, 'realtime/presence/alice/connections/tab-1'), {
+      state: 'online', connectedAt: Date.now(), updatedAt: Date.now(), displayName: 'Alice',
+    }));
+  });
+});
+
+describe('Incoming call signal ACL', () => {
+  it('lets only the recipient read a server-written signal', async () => {
+    await environment.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(testFirestore(context), 'users', 'alice', 'incomingCalls', 'call-1'), {
+        callId: 'call-1', roomId: ROOM_ID, kind: 'voice', status: 'ringing', startedBy: 'owner',
+      });
+    });
+    const alice = testFirestore(environment.authenticatedContext('alice'));
+    const bob = testFirestore(environment.authenticatedContext('bob'));
+    await assertSucceeds(getDoc(doc(alice, 'users', 'alice', 'incomingCalls', 'call-1')));
+    await assertFails(getDoc(doc(bob, 'users', 'alice', 'incomingCalls', 'call-1')));
+    await assertFails(setDoc(doc(alice, 'users', 'alice', 'incomingCalls', 'call-2'), {
+      callId: 'call-2', roomId: ROOM_ID, status: 'ringing',
+    }));
+  });
+});
+
+describe('Call lifecycle ACL', () => {
+  it('allows active members to read server state but never mutate it', async () => {
+    await seedFirestore();
+    await environment.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(testFirestore(context), 'rooms', ROOM_ID, 'calls', 'call-1'), {
+        callId: 'call-1', roomId: ROOM_ID, kind: 'voice', status: 'ringing', startedBy: 'owner',
+      });
+    });
+    const alice = testFirestore(environment.authenticatedContext('alice'));
+    const bob = testFirestore(environment.authenticatedContext('bob'));
+    await assertSucceeds(getDoc(doc(alice, 'rooms', ROOM_ID, 'calls', 'call-1')));
+    await assertFails(getDoc(doc(bob, 'rooms', ROOM_ID, 'calls', 'call-1')));
+    await assertFails(updateDoc(doc(alice, 'rooms', ROOM_ID, 'calls', 'call-1'), { status: 'active' }));
+  });
+});
