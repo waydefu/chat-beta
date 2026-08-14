@@ -1142,7 +1142,12 @@ function beginSession(nextUser: AuthenticatedUser): void {
     const requested = new URL(window.location.href).searchParams.get('room');
     if (!roomId && requested && rooms.has(requested)) void selectRoom(rooms.get(requested)!);
   }, (error) => toast(`聊天室清單讀取失敗：${errorText(error)}`, 'error')));
-  void connectSessionPresence(nextUser, scope).catch(() => failClosedPresence());
+  void connectSessionPresence(nextUser, scope).catch((error) => {
+    failClosedPresence();
+    // Losing this leaves the user invisible to everyone else for the whole
+    // session, and nothing else in the UI would ever say so.
+    if (!scope.signal.aborted) toast(`在線狀態連線失敗，其他人會看到你離線：${errorText(error)}`, 'error');
+  });
   void watchSessionCalls(nextUser.uid, scope).catch((error) => {
     if (!scope.signal.aborted) toast(`來電監聽失敗：${errorText(error)}`, 'error');
   });
