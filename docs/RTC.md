@@ -71,6 +71,30 @@ V2 名稱是 rollout boundary：production舊三支 `startLiveKitCall`／`getLiv
 
 分段量測在 `src/calls/call-timing.ts`：`uiClicked → uiAcknowledged → modulesReady → callCreated → tokenReceived → sdkReady → providerConnected → mediaReady → serverConfirmed`。預設靜默，於瀏覽器 console 設定 `localStorage['chat-lite:call-timing'] = '1'` 後對該 session 生效，只輸出階段名稱與毫秒，不輸出任何 id、名稱、token 或 provider 回應。**任何 latency 變更都必須附上前後的分段數字**；沒有數字的就不是 latency fix。
 
+### 實測結果（2026-08-15，production，語音通話）
+
+冷啟動 1 通、暖機 3 通，同一房間、同一 client、真實 LiveKit 與已部署的 callables。暖機欄為 3 通中位數。
+
+| 階段 | 冷啟動 | 暖機中位數 | 暖機佔比 | 歸屬 |
+|---|---|---|---|---|
+| uiClicked → uiAcknowledged | 0 ms | 0 ms | 0% | client |
+| → modulesReady | 450 ms | 11 ms | 0.2% | client（chunk 載入） |
+| → callCreated | 5937 ms | 864 ms | 17% | `startLiveKitCallV2` |
+| → tokenReceived | 3566 ms | 724 ms | 14% | `getLiveKitTokenV2` |
+| → sdkReady | **0 ms** | **0 ms** | **0%** | `livekit-client` 下載 |
+| → providerConnected | 4168 ms | 1701 ms | 33% | LiveKit 協商 |
+| → mediaReady | 1169 ms | 1177 ms | 23% | `getUserMedia` |
+| → serverConfirmed | 3302 ms | 646 ms | 13% | `confirmLiveKitCall` |
+| **總計** | **18613 ms** | **5101 ms** | | |
+
+**Critical path**：不能只讀 log 順序。`CallProvider.prepare()` 讓 `livekit-client`（139 kB gzip）的下載與 `startLiveKitCallV2` + `getLiveKitTokenV2` 平行，四次量測的 `sdkReady` 全部是 **+0 ms** —— 也就是 SDK 早在 token 回來前就備妥，**完全不在 critical path 上**。這條最佳化已經做完，沒有剩餘空間。
+
+三支 callable 合計佔冷啟動 **12805 ms（69%）**、暖機 **2234 ms（44%）**。client 端自身只有 `modulesReady` 的 11–450 ms，即 **0.2%–2.4%**。
+
+**TD-C1 結案：`MEASURED-BUT-NOT-CLIENT-FIXABLE`。** 主要瓶頸是 Cloud Function 冷啟動與 provider／媒體裝置，不在 client。後續若要再快，方向是 Functions 的 min instances、App Check 驗證成本與 region 延遲，**不是**繼續改 client。不得為了帳面數字把 `serverConfirmed` 移出使用者可見的連線判定 —— server-authoritative call state 是 invariant。
+
+`mediaReady` 的 1.2 秒在冷／暖幾乎不變（1169 / 1177 ms），符合裝置初始化而非網路的特徵；視訊未單獨量測。
+
 ## Staging smoke gate
 
 正式部署前在受保護 staging 使用兩個真實帳號測：concurrent start、double click、caller media denial、callee join、remote already present、remote late join、reconnect、tab close、network loss、idempotent end、voice/video/screen share、320/390px mobile、App Check enforcement。確認 DOM 無殘留 call audio/video、Firestore 無永久 live call、Cloud Logging 不含 token 或完整聊天內容。

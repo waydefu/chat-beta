@@ -140,7 +140,11 @@ export async function connectGlobalPresence(uid: string): Promise<GlobalPresence
         return () => undefined;
       }
       const latest = new Map<string, Record<string, PresenceConnectionState>>();
-      let emitted = '';
+      // Null, not '': "nobody is online" is itself a signature of '', so an
+      // empty-string sentinel collides with it and swallows the very first
+      // emission whenever the user is alone. The caller then never learns the
+      // list is empty and keeps rendering whatever the previous room left.
+      let emitted: string | null = null;
       const emit = (): void => {
         const active = [...latest].flatMap(([candidate, connections]) => (
           hasOnlineConnection(connections, serverNow()) ? [candidate] : []
