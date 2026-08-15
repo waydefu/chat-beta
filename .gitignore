@@ -18,3 +18,4 @@ artifacts/
 .env*
 !.env.example
 !functions/.env.example
+.claude/settings.local.json

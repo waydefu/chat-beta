@@ -26,3 +26,13 @@
 | TD-D1 | `docs/motion.md:20` 引用不存在的 `chat-head-ping`（實際為 `chat-head-pop`） | 文件與程式碼不符 | 低 | 無 | 立即 | 修正或隨死碼一併移除 |
 | TD-R1 | 媒體與貼圖批次（審計 PR 3）：共用 R2 primitives、貼圖管理 UI、URL 過期重取、上傳重試 | 使用者無法管理自訂貼圖；重複的 MIME／配額邏輯易漂移 | 中 | 無 | 待排 | 依審計 P1-16／P1-17／P2-07～09 逐項驗收 |
 | TD-R2 | 備份與保留批次（審計 PR 5）：archive manifest、checkpoint、dry-run、restore runbook | 無法安全啟用資料保留 | 中 | 無 | 待排 | 依審計 P1-18 驗收；刪除預設維持關閉 |
+
+## 文件衝突（DOCUMENT-CONFLICT）
+
+登記與 executable architecture 相牴觸的既有條目。程式碼、Rules 與設定優先於文件；未解決前不得依該條目施工。
+
+| ID | 衝突條目 | 與什麼牴觸 | 為何 | 提出 |
+|---|---|---|---|---|
+| DC-1 | TD-M1「撤銷流程一併移除 `realtime/presence/{uid}`」 | `AGENTS.md` 條款 1（RTDB 不是授權來源）與 6（切房不得把使用者標為離線）、`docs/SECURITY.md`「Global Presence 不作為 room ACL」、`database.rules.json`（`realtime/presence/{uid}` 只由本人寫入，與 room membership 無關）、`src/realtime/presence-state.ts` 的 `onlineRoomMembers` | global presence 是「已登入的 session」，不是「某房間的成員」。因單一房間撤銷而刪除全域節點，會讓使用者在其他房間被誤判離線；該節點由 client 擁有寫入權，heartbeat 會立刻寫回，因此既不正確也無效 | 2026-08-15，Claude Code harness PR |
+
+TD-M1 的症狀前提也需重新確認：`chat.controller.ts` 的在線清單是 `onlineRoomMembers(members, onlineIds, selfUid)`，即 active room membership ∩ global presence，被撤銷者會因為離開 `members` 而消失。目前沒有任何 UI 直接呈現 global presence。正確驗收方向是「撤銷後該使用者不再出現在該房間在線清單，且其他房間在線狀態不變」，而非刪除全域 presence 節點。
