@@ -15,7 +15,7 @@
     "test:rules": "node node_modules/firebase-tools/lib/bin/firebase.js emulators:exec --project demo-chat-lite --only firestore,database \"node node_modules/vitest/vitest.mjs run --config vitest.rules.config.ts\"",
     "pretest:e2e": "node node_modules/vite/bin/vite.js build",
     "test:e2e": "node node_modules/@playwright/test/cli.js test",
-    "check:harness": "node .claude/validate-harness.mjs && node .claude/hooks/guard-commands.test.mjs",
+    "check:harness": "node .claude/validate-harness.mjs && node .claude/validate-harness.test.mjs && node .claude/hooks/guard-commands.test.mjs",
     "preflight:rollout": "node scripts/rollout-preflight.mjs --project=f-chat-wayde-fu",
     "preflight:rollout:online": "node scripts/rollout-preflight.mjs --project=f-chat-wayde-fu --online",
     "check": "node node_modules/eslint/bin/eslint.js . && node node_modules/typescript/bin/tsc --noEmit && node node_modules/vitest/vitest.mjs run --config vitest.config.ts && node node_modules/vitest/vitest.mjs run --config functions/vitest.config.ts && node node_modules/typescript/bin/tsc -p functions/tsconfig.json && node node_modules/vite/bin/vite.js build",

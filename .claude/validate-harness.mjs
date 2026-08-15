@@ -70,13 +70,19 @@ const globMatches = (pattern) => {
 
 /** Frontmatter reader for the subset these files use: scalars and string lists. */
 function frontmatter(text) {
-  if (!text.startsWith('---')) return null;
-  const end = text.indexOf('\n---', 3);
+  // Normalise first. Slicing the block out of raw CRLF text leaves a stray \r on
+  // its final line, and neither `.` nor `$` will cross one in JavaScript, so the
+  // last key of every block silently vanished on a CRLF checkout - which read as
+  // "missing description" on skills and an empty `paths:` on rules whose files
+  // were perfectly correct.
+  const normalised = text.replace(/\r\n/g, '\n');
+  if (!normalised.startsWith('---')) return null;
+  const end = normalised.indexOf('\n---', 3);
   if (end === -1) return null;
-  const block = text.slice(4, end);
+  const block = normalised.slice(4, end);
   const data = {};
   let key = null;
-  for (const line of block.split(/\r?\n/)) {
+  for (const line of block.split('\n')) {
     if (!line.trim() || line.trim().startsWith('#')) continue;
     const listItem = line.match(/^\s*-\s+(.*)$/);
     if (listItem && key) {
