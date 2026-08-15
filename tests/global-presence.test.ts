@@ -155,6 +155,39 @@ describe('global presence session', () => {
     await session.close();
   });
 
+  it('tells the caller the room is empty instead of staying silent', async () => {
+    // "Nobody online" has the signature '', so an empty-string sentinel made it
+    // indistinguishable from "nothing emitted yet". The first emission was
+    // dropped whenever the user was alone, and the panel kept rendering the
+    // room they had just left. Verified in production: the count sat on the
+    // previous room's text until somebody else happened to come online.
+    const session = await connect('me');
+    const seen: Array<string[]> = [];
+    const stop = session.watchOnlineUsers(['alice'], (ids) => seen.push([...ids]), () => undefined);
+
+    emit('.info/serverTimeOffset', 0);
+    emit(connectionsOf('alice'), null);
+    expect(seen).toEqual([[]]);
+
+    stop();
+    await session.close();
+  });
+
+  it('still suppresses a repeat of an unchanged empty projection', async () => {
+    const session = await connect('me');
+    const seen: Array<string[]> = [];
+    const stop = session.watchOnlineUsers(['alice', 'bob'], (ids) => seen.push([...ids]), () => undefined);
+
+    emit('.info/serverTimeOffset', 0);
+    emit(connectionsOf('alice'), null);
+    emit(connectionsOf('bob'), null);
+    // Two members reported absent, but the projection only changed once.
+    expect(seen).toEqual([[]]);
+
+    stop();
+    await session.close();
+  });
+
   it('excludes the current user from the watch set', async () => {
     const session = await connect('me');
     const seen: Array<string[]> = [];
