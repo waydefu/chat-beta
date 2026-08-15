@@ -62,7 +62,7 @@ Adding a new static import to the signed-in path can trip `scripts/check-bundle-
 
 ## Known local debt
 
-`chat.controller.ts` (~1300 lines) and `style.css` are layered and are scheduled for a split in `docs/TECH-DEBT.md` (TD-U1..TD-U4, TD-T1, TD-P1, TD-P2). Do not start that split as a side effect of another task, and do not treat their current structure as the target pattern.
+`chat.controller.ts` (~1470 lines) and `style.css` are layered and are scheduled for a split in `docs/TECH-DEBT.md` (TD-U1..TD-U4). Do not start that split as a side effect of another task, and do not treat their current structure as the target pattern.
 
 ## Read next
 

@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   hasOnlineConnection,
   onlineRoomMembers,
+  presenceSummary,
   PRESENCE_LEGACY_TRUST_MS,
   PRESENCE_STALE_AFTER_MS,
 } from '../src/realtime/presence-state';
@@ -57,5 +58,27 @@ describe('global presence projection', () => {
     expect(onlineRoomMembers(members, new Set(['self', 'alice', 'outsider']), 'self')).toEqual([
       { uid: 'alice', displayName: 'Alice', online: true },
     ]);
+  });
+});
+
+describe('presence summary wording', () => {
+  it('says you are there when the room holds nobody else', () => {
+    // The projection excludes self by design, so its count is "other members".
+    // Rendering that as "0 位在線" told a user sitting in the room that nobody
+    // was — including themselves.
+    const alone = onlineRoomMembers(members, new Set(['self']), 'self');
+    expect(alone).toEqual([]);
+    expect(presenceSummary(alone.length, true)).toBe('只有你在線');
+  });
+
+  it('counts the others without dropping you from the sentence', () => {
+    const others = onlineRoomMembers(members, new Set(['self', 'alice', 'bob']), 'self');
+    expect(others).toHaveLength(2);
+    expect(presenceSummary(others.length, true)).toBe('你和其他 2 位在線');
+    expect(presenceSummary(1, true)).toBe('你和其他 1 位在線');
+  });
+
+  it('does not claim you are alone in a room when no room is open', () => {
+    expect(presenceSummary(0, false)).toBe('尚未選擇聊天室');
   });
 });

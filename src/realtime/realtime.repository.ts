@@ -14,6 +14,7 @@ import { rtdb } from '../firebase/realtime-client';
 import type { Unsubscribe } from '../types';
 import { encodeRoomKey } from '../utils';
 import { hasOnlineConnection, PRESENCE_HEARTBEAT_MS, type PresenceConnectionState } from './presence-state';
+import { typingNames, TYPING_SWEEP_MS, type TypingConnectionState } from './typing-state';
 
 export interface GlobalPresenceSession {
   watchOnlineUsers(userIds: string[], next: (onlineUserIds: Set<string>) => void, error: (cause: Error) => void): Unsubscribe;
@@ -25,6 +26,18 @@ export interface RealtimeRoomSession {
   watchTyping(next: (names: string[]) => void, error: (cause: Error) => void): Unsubscribe;
   watchAiDrafts(next: (drafts: Map<string, { botId: string; text: string; status: string }>) => void, error: (cause: Error) => void): Unsubscribe;
   close(): Promise<void>;
+}
+
+/**
+ * The raw socket state, which is a different question from "did the room
+ * subscription succeed". The header needs both: one says the mirror is reachable
+ * at all, the other says this room is authorised on it.
+ */
+export function watchRealtimeConnection(
+  next: (connected: boolean) => void,
+  error: (cause: Error) => void,
+): Unsubscribe {
+  return onValue(ref(rtdb, '.info/connected'), (snapshot) => next(snapshot.val() === true), error);
 }
 
 async function removeIfPresent(target: DatabaseReference): Promise<boolean> {
@@ -182,6 +195,16 @@ export async function connectRealtimeRoom(
   await Promise.all(disconnects.map((handler) => handler.remove()));
   await set(activity, { state: 'active', updatedAt: serverTimestamp() });
 
+  // Typing entries are judged against the server clock they were stamped with,
+  // not this tab's, so a skewed client neither hides live typists nor holds dead
+  // ones. Same reasoning as the presence session, which tracks its own offset.
+  let serverTimeOffset = 0;
+  const watchOffset = onValue(ref(rtdb, '.info/serverTimeOffset'), (snapshot) => {
+    const value = snapshot.val();
+    if (typeof value === 'number') serverTimeOffset = value;
+  });
+  const serverNow = (): number => Date.now() + serverTimeOffset;
+
   let closed = false;
   return {
     async setTyping(active) {
@@ -190,12 +213,28 @@ export async function connectRealtimeRoom(
       else await removeIfPresent(typing);
     },
     watchTyping(next, error) {
-      return onValue(ref(rtdb, `${base}/typing`), (snapshot) => {
-        const value = (snapshot.val() ?? {}) as Record<string, Record<string, { displayName?: string }>>;
-        next(Object.entries(value).flatMap(([candidateUid, connections]) => candidateUid === user.uid
-          ? []
-          : [Object.values(connections)[0]?.displayName || '有人']));
+      let latest: Record<string, Record<string, TypingConnectionState>> = {};
+      let emitted: string | null = null;
+      const emit = (): void => {
+        const names = typingNames(latest, user.uid, serverNow());
+        // The sweep re-evaluates on a timer, so without this the indicator would
+        // be rewritten every couple of seconds for no change.
+        const signature = names.join('\u0000');
+        if (signature === emitted) return;
+        emitted = signature;
+        next(names);
+      };
+      const stop = onValue(ref(rtdb, `${base}/typing`), (snapshot) => {
+        latest = (snapshot.val() ?? {}) as Record<string, Record<string, TypingConnectionState>>;
+        emit();
       }, error);
+      // An orphaned entry stops changing, so onValue never fires for it again.
+      // Nothing but this sweep can retire it.
+      const sweep = setInterval(emit, TYPING_SWEEP_MS);
+      return () => {
+        clearInterval(sweep);
+        stop();
+      };
     },
     watchAiDrafts(next, error) {
       return onValue(ref(rtdb, `${base}/aiDrafts`), (snapshot) => {
@@ -206,6 +245,7 @@ export async function connectRealtimeRoom(
     async close() {
       if (closed) return;
       closed = true;
+      watchOffset();
       const removed = await Promise.all([removeIfPresent(typing), removeIfPresent(activity)]);
       await Promise.all(disconnects.map((handler, index) => (
         removed[index] ? handler.cancel().catch(() => undefined) : Promise.resolve()

@@ -62,6 +62,15 @@ V2 名稱是 rollout boundary：production舊三支 `startLiveKitCall`／`getLiv
 - 語音通話不顯示 camera control；不支援 `getDisplayMedia` 時不顯示 screen-share control。
 - desktop 是可拖動 compact panel；mobile 是 safe-area aware active screen，可縮成 call bar；incoming call 是 focus-contained bottom sheet。
 
+## Startup sequence and latency
+
+按下通話鍵到看見通話畫面之間橫跨一個 dynamic import、三支 callable、一次 provider handshake 與一次媒體授權。感知延遲與實際延遲的修法不同，兩者分開處理：
+
+- **感知**：`chat.controller.ts` 在 click handler 同一個 task 內（任何 `await` 之前）就顯示 `#call-pending`、鎖住兩顆通話鍵。它不等 call chunk、不等 LiveKit、不等 callable。取消鍵在 call 尚未建立時直接放棄；已建立時走一般掛斷路徑，room lock 仍由 server 釋放。
+- **實際**：`livekit-client`（約 139 kB gzip，全 app 最大的 chunk）的下載透過 `CallProvider.prepare()` 在 `startLiveKitCallV2` 之前啟動，並與 `getLiveKitTokenV2` 平行。它仍然只在真的要通話時才下載——**不得**改成 eager import，也不得進 signed-in core chunk，`scripts/check-bundle-budget.mjs` 的 forbidden-chunk 檢查會擋。
+
+分段量測在 `src/calls/call-timing.ts`：`uiClicked → uiAcknowledged → modulesReady → callCreated → tokenReceived → sdkReady → providerConnected → mediaReady → serverConfirmed`。預設靜默，於瀏覽器 console 設定 `localStorage['chat-lite:call-timing'] = '1'` 後對該 session 生效，只輸出階段名稱與毫秒，不輸出任何 id、名稱、token 或 provider 回應。**任何 latency 變更都必須附上前後的分段數字**；沒有數字的就不是 latency fix。
+
 ## Staging smoke gate
 
 正式部署前在受保護 staging 使用兩個真實帳號測：concurrent start、double click、caller media denial、callee join、remote already present、remote late join、reconnect、tab close、network loss、idempotent end、voice/video/screen share、320/390px mobile、App Check enforcement。確認 DOM 無殘留 call audio/video、Firestore 無永久 live call、Cloud Logging 不含 token 或完整聊天內容。

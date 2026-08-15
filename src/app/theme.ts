@@ -23,11 +23,34 @@ export function storeTheme(theme: Theme): void {
   localStorage.setItem(THEME_KEY, theme);
 }
 
-// Follows the OS only while no explicit choice is stored, so a deliberate
-// toggle is never overwritten.
-export function watchSystemTheme(next: (theme: Theme) => void): void {
-  window.matchMedia(DARK_QUERY).addEventListener('change', (event) => {
-    if (storedTheme()) return;
-    next(event.matches ? 'dark' : 'light');
-  });
+// One DOM listener for the page, however many callers want the value. Both the
+// auth screen and the chat controller need to hear about an OS change, and they
+// come and go at different times; registering a media-query listener per caller
+// gave the same state two owners and no way to release either.
+const subscribers = new Set<(theme: Theme) => void>();
+let query: MediaQueryList | null = null;
+
+function onSystemChange(event: MediaQueryListEvent): void {
+  // A deliberate toggle is never overwritten by the OS.
+  if (storedTheme()) return;
+  const theme: Theme = event.matches ? 'dark' : 'light';
+  for (const subscriber of [...subscribers]) subscriber(theme);
+}
+
+/**
+ * Follows the OS only while no explicit choice is stored. The returned cleanup
+ * releases just this subscriber; the shared listener is removed once the last
+ * one has gone.
+ */
+export function watchSystemTheme(next: (theme: Theme) => void): () => void {
+  subscribers.add(next);
+  if (!query) {
+    query = window.matchMedia(DARK_QUERY);
+    query.addEventListener('change', onSystemChange);
+  }
+  return () => {
+    if (!subscribers.delete(next) || subscribers.size || !query) return;
+    query.removeEventListener('change', onSystemChange);
+    query = null;
+  };
 }

@@ -9,16 +9,56 @@ interface LiveKitGrant {
   token: string;
 }
 
+/**
+ * Only the three bindings this file actually uses. Holding the whole module
+ * namespace instead costs ~5 kB gzip in the `rtc-livekit` chunk: the namespace
+ * counts as live, so nothing in it can be shaken out. Narrowing here keeps the
+ * download the warm-up was added to speed up from getting bigger.
+ */
+type LiveKitCore = Pick<typeof import('livekit-client'), 'Room' | 'RoomEvent' | 'Track'>;
+
+/**
+ * `livekit-client` is by far the largest chunk this app ships and it must stay
+ * out of the core bundle, so it is imported here and nowhere else. Caching the
+ * promise means a second call in the same session does not pay for it twice; a
+ * failed load is dropped so the next attempt can retry rather than replaying the
+ * rejection forever.
+ */
+let sdk: Promise<LiveKitCore> | null = null;
+
+function loadSdk(): Promise<LiveKitCore> {
+  sdk ??= import('livekit-client')
+    .then(({ Room, RoomEvent, Track }) => ({ Room, RoomEvent, Track }))
+    .catch((error: unknown) => {
+      sdk = null;
+      throw error;
+    });
+  return sdk;
+}
+
 export class LiveKitCallProvider implements CallProvider {
+  prepare(): void {
+    // Nothing awaits this: it exists purely so the download is already in flight
+    // by the time the token comes back. The rejection is handled where the
+    // module is actually needed.
+    void loadSdk().catch(() => undefined);
+  }
+
   async join(options: CallJoinOptions, signal: AbortSignal): Promise<CallSession> {
     options.onTransportState('connecting');
+    // Started before the token request, not after it. The SDK does not depend on
+    // the grant, so serialising them added the whole download to the critical
+    // path for no reason.
+    const sdkReady = loadSdk();
     const grant = await callFunction<Pick<CallJoinOptions, 'roomId' | 'callId'>, LiveKitGrant>(
       'getLiveKitTokenV2',
       { roomId: options.roomId, callId: options.callId },
       RTC_CALLABLE_OPTIONS,
     );
+    options.timeline?.mark('tokenReceived');
     signal.throwIfAborted();
-    const { Room, RoomEvent, Track } = await import('livekit-client');
+    const { Room, RoomEvent, Track } = await sdkReady;
+    options.timeline?.mark('sdkReady');
     const room = new Room({ adaptiveStream: true, dynacast: true });
     const attached = new Set<HTMLElement>();
     const attachedTracks = new Set<LocalTrack | RemoteTrack>();
@@ -132,9 +172,11 @@ export class LiveKitCallProvider implements CallProvider {
 
     try {
       await room.connect(grant.url, grant.token);
+      options.timeline?.mark('providerConnected');
       signal.throwIfAborted();
       await room.localParticipant.setMicrophoneEnabled(options.audio);
       await room.localParticipant.setCameraEnabled(options.video);
+      options.timeline?.mark('mediaReady');
       for (const publication of room.localParticipant.videoTrackPublications.values()) attachLocal(publication);
       reportParticipants();
       options.onTransportState('connected');

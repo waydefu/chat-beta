@@ -50,6 +50,18 @@ export function hasOnlineConnection(
   return Object.values(connections).some((connection) => isLive(connection, serverNow));
 }
 
+/**
+ * `onlineRoomMembers` deliberately excludes the current user — you are not your
+ * own room presence — but the count it produces is therefore "other members",
+ * and rendering it as "N 位在線" told a user sitting alone in a room that nobody
+ * was there, including themselves. The projection is right; only the sentence
+ * was wrong, so the fix belongs here and not in the intersection above.
+ */
+export function presenceSummary(otherOnlineCount: number, roomOpen: boolean): string {
+  if (!roomOpen) return '尚未選擇聊天室';
+  return otherOnlineCount === 0 ? '只有你在線' : `你和其他 ${otherOnlineCount} 位在線`;
+}
+
 export function onlineRoomMembers(
   members: RoomMembership[],
   onlineUserIds: ReadonlySet<string>,

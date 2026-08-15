@@ -26,6 +26,8 @@ realtime/rooms/{roomKey}/aiDrafts/{runId}
 
 Global Presence connection 保存 `state`、`connectedAt`、`updatedAt`；multi-tab/multi-device 各有一個 connection，最後一個 connection 消失才 offline。聊天室成員面板只讀已知 member UID 的個別 subtree，取 `room members ∩ global online users` 並排除自己；Rules 禁止列舉 global presence root。
 
+Typing connection 保存 `displayName` 與 `updatedAt`。與 global presence 同樣的規則：liveness 是 timestamp 判斷，不是節點存在與否。撰寫端每次按鍵刷新 `updatedAt`、停止 `TYPING_IDLE_CLEAR_MS` 後移除節點；讀取端以 server 時鐘判定 `TYPING_STALE_AFTER_MS` 內才算新鮮，並定期 sweep——孤兒節點不再變動，`onValue` 不會再為它觸發。常數集中在 `src/realtime/typing-state.ts`。
+
 `roomKey` 是 UTF-8 room ID 的 base64url。RTDB members 是 room ephemeral ACL 的 authorization mirror，不是 membership 查詢來源。`membershipVersions` 是 server-only monotonic tombstone/operation guard，避免 stale add event 覆蓋較新的撤銷。Legacy `realtime/rooms/{roomKey}/presence` 在 additive migration window 暫留 Rules，但新版 client 不再讀寫；驗證流量歸零後必須移除。
 
 Message 以 `kind` 判別 text、image、video、file、audio、sticker、system、call。client 可直接建立的永久訊息只有 `senderType=user` 的 text；其他受信任 metadata 由 Functions 建立。
