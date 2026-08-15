@@ -1,5 +1,6 @@
 import type { IncomingCallSignal } from '../types';
 import { callPhaseLabel, transitionCallPhase, type ClientCallPhase } from './call-state';
+import { startCallTimeline, type CallStartTiming, type CallTimeline } from './call-timing';
 import { IncomingCallPanel } from './incoming-call-panel';
 import type { CallPanel } from './call-panel';
 import type { CallParticipant, CallSession, CallTransportState } from './providers/call-provider';
@@ -23,6 +24,13 @@ export interface JoinCallRequest {
   roomId: string;
   callId: string;
   kind: 'voice' | 'video';
+  timing?: CallStartTiming;
+}
+
+function timelineFor(timing: CallStartTiming | undefined): CallTimeline {
+  const timeline = startCallTimeline(timing?.clickedAt ?? performance.now());
+  if (timing) timeline.mark('uiAcknowledged', timing.acknowledgedAt);
+  return timeline;
 }
 
 export class CallUIController {
@@ -52,8 +60,9 @@ export class CallUIController {
     return this.phase !== 'idle' && this.phase !== 'ended' && this.phase !== 'failed';
   }
 
-  async begin(roomId: string, kind: 'voice' | 'video'): Promise<void> {
+  async begin(roomId: string, kind: 'voice' | 'video', timing?: CallStartTiming): Promise<void> {
     if (this.active || this.disposed) return;
+    const timeline = timelineFor(timing);
     const callAbort = new AbortController();
     this.callAbort = callAbort;
     this.setPhase('creating');
@@ -65,12 +74,14 @@ export class CallUIController {
         import('./providers/livekit-call-provider'),
         import('./call.service'),
       ]);
+      timeline.mark('modulesReady');
       callAbort.signal.throwIfAborted();
       const panel = this.openPanel(Panel, kind);
       const started = await startCall(new LiveKitCallProvider(), {
         roomId,
         kind,
         stage: panel.stage,
+        timeline,
         onCreated: (callId) => {
           this.call = {
             roomId,
@@ -99,9 +110,11 @@ export class CallUIController {
       if (started.status === 'active') panel.setConnectedAt(started.connectedAtMs);
       this.startHeartbeat();
       this.changed();
+      timeline.report('connected');
       this.notify(`${kind === 'video' ? '視訊' : '語音'}通話已建立，正在等待對方加入。`);
     } catch (error) {
       if (this.callAbort === callAbort) this.callAbort = null;
+      timeline.report(callAbort.signal.aborted ? 'aborted' : 'failed');
       if (callAbort.signal.aborted && this.phase === 'idle') return;
       this.failLocalCall();
       throw error;
@@ -110,6 +123,7 @@ export class CallUIController {
 
   async join(request: JoinCallRequest): Promise<void> {
     if (this.active || this.disposed) return;
+    const timeline = timelineFor(request.timing);
     const callAbort = new AbortController();
     this.callAbort = callAbort;
     this.call = {
@@ -131,11 +145,15 @@ export class CallUIController {
         import('./providers/livekit-call-provider'),
         import('./call.service'),
       ]);
+      timeline.mark('modulesReady');
       callAbort.signal.throwIfAborted();
       const panel = this.openPanel(Panel, request.kind);
       const joined = await joinCall(new LiveKitCallProvider(), {
-        ...request,
+        roomId: request.roomId,
+        callId: request.callId,
+        kind: request.kind,
         stage: panel.stage,
+        timeline,
         onParticipants: (participants) => this.onParticipants(participants),
         onTransportState: (state) => this.onTransportState(state),
       }, callAbort.signal);
@@ -150,8 +168,10 @@ export class CallUIController {
       if (joined.status === 'active') panel.setConnectedAt(joined.connectedAtMs);
       this.incomingPanel?.hide();
       this.changed();
+      timeline.report('connected');
     } catch (error) {
       if (this.callAbort === callAbort) this.callAbort = null;
+      timeline.report(callAbort.signal.aborted ? 'aborted' : 'failed');
       if (callAbort.signal.aborted && this.phase === 'idle') return;
       this.failLocalCall();
       throw error;

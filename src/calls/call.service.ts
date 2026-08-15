@@ -1,5 +1,6 @@
 import { callFunction } from '../firebase/callables';
 import { DomainError } from '../shared/errors/domain-error';
+import type { CallTimingRecorder } from './call-timing';
 import type { CallParticipant, CallProvider, CallSession, CallTransportState } from './providers/call-provider';
 import { RTC_CALLABLE_OPTIONS } from './rtc-callable-options';
 
@@ -15,6 +16,7 @@ export interface StartCallRequest {
   roomId: string;
   kind: 'voice' | 'video';
   stage: HTMLElement;
+  timeline?: CallTimingRecorder;
   onCreated(callId: string): void;
   onParticipants(participants: CallParticipant[]): void;
   onTransportState(state: CallTransportState): void;
@@ -25,6 +27,7 @@ export interface JoinExistingCallRequest {
   callId: string;
   kind: 'voice' | 'video';
   stage: HTMLElement;
+  timeline?: CallTimingRecorder;
   onParticipants(participants: CallParticipant[]): void;
   onTransportState(state: CallTransportState): void;
 }
@@ -97,6 +100,11 @@ export async function startCall(
 ): Promise<ConnectedCall> {
   const operationId = crypto.randomUUID();
   const callId = operationId;
+  // Nothing has been created yet, so this is outside the try on purpose: there
+  // is no server state to roll back if it misbehaves, and `prepare` is defined
+  // as non-throwing. It starts the transport's heavy download now so it overlaps
+  // the create and token round trips rather than queueing behind both.
+  provider.prepare?.();
   try {
     const started = await callFunction<{
       roomId: string;
@@ -108,6 +116,7 @@ export async function startCall(
       operationId,
     }, RTC_CALLABLE_OPTIONS);
     if (started.callId !== callId) throw new Error('RTC server returned a mismatched operation id.');
+    request.timeline?.mark('callCreated');
     signal.throwIfAborted();
     request.onCreated(callId);
     const session = await provider.join({
@@ -116,11 +125,13 @@ export async function startCall(
       audio: true,
       video: request.kind === 'video',
       stage: request.stage,
+      timeline: request.timeline,
       onParticipants: request.onParticipants,
       onTransportState: request.onTransportState,
     }, signal);
     try {
       const confirmed = await confirmConnection(request.roomId, callId);
+      request.timeline?.mark('serverConfirmed');
       return {
         callId,
         session,
@@ -142,12 +153,14 @@ export async function joinCall(
   request: JoinExistingCallRequest,
   signal: AbortSignal,
 ): Promise<ConnectedCall> {
+  provider.prepare?.();
   try {
     await callFunction('respondLiveKitCall', {
       roomId: request.roomId,
       callId: request.callId,
       action: 'accepted',
     }, RTC_CALLABLE_OPTIONS);
+    request.timeline?.mark('callCreated');
     signal.throwIfAborted();
     const session = await provider.join({
       roomId: request.roomId,
@@ -155,11 +168,13 @@ export async function joinCall(
       audio: true,
       video: request.kind === 'video',
       stage: request.stage,
+      timeline: request.timeline,
       onParticipants: request.onParticipants,
       onTransportState: request.onTransportState,
     }, signal);
     try {
       const confirmed = await confirmConnection(request.roomId, request.callId);
+      request.timeline?.mark('serverConfirmed');
       return {
         callId: request.callId,
         session,

@@ -79,6 +79,57 @@ describe('call service orchestration', () => {
     });
   });
 
+  it('warms the transport before the create callable, not after the token comes back', async () => {
+    const order: string[] = [];
+    callFunctionMock.mockImplementation(async (name: string, data: { operationId?: string }) => {
+      order.push(name);
+      if (name === 'startLiveKitCallV2') return { callId: data.operationId, status: 'creating' };
+      if (name === 'confirmLiveKitCall') return { callId: data.operationId, status: 'ringing', connectedAtMs: 1 };
+      throw new Error(`unexpected callable ${name}`);
+    });
+    const transport: CallProvider = {
+      prepare: () => { order.push('prepare'); },
+      join: async () => { order.push('join'); return session(); },
+    };
+
+    await startCall(transport, base, new AbortController().signal);
+
+    // The transport SDK is the largest chunk in the app and does not depend on
+    // the call existing. Downloading it only once the token has arrived put its
+    // whole transfer on the critical path.
+    expect(order).toEqual(['prepare', 'startLiveKitCallV2', 'join', 'confirmLiveKitCall']);
+  });
+
+  it('warms the transport when accepting an existing call too', async () => {
+    const order: string[] = [];
+    callFunctionMock.mockImplementation(async (name: string) => {
+      order.push(name);
+      if (name === 'confirmLiveKitCall') return { callId: 'call', status: 'active', connectedAtMs: 1 };
+      return { callId: 'call', status: 'accepted' };
+    });
+    const transport: CallProvider = {
+      prepare: () => { order.push('prepare'); },
+      join: async () => session(),
+    };
+
+    await joinCall(transport, {
+      roomId: 'room', callId: 'call', kind: 'voice', stage: {} as HTMLElement,
+      onParticipants: vi.fn(), onTransportState: vi.fn(),
+    }, new AbortController().signal);
+
+    expect(order[0]).toBe('prepare');
+    expect(order[1]).toBe('respondLiveKitCall');
+  });
+
+  it('still works for a provider that declares no warm-up', async () => {
+    callFunctionMock.mockImplementation(async (name: string, data: { operationId?: string }) => {
+      if (name === 'startLiveKitCallV2') return { callId: data.operationId, status: 'creating' };
+      return { callId: data.operationId, status: 'ringing', connectedAtMs: 1 };
+    });
+    await expect(startCall(provider(vi.fn(async () => session())), base, new AbortController().signal))
+      .resolves.toMatchObject({ status: 'ringing' });
+  });
+
   it('uses limited-use App Check tokens for every service transition', async () => {
     callFunctionMock.mockImplementation(async (name: string) => {
       if (name === 'confirmLiveKitCall') return { callId: 'call', status: 'active', connectedAtMs: 1 };

@@ -20,7 +20,17 @@ import {
 } from '../messages/message.repository';
 import { requireValidMessage, structuredMentions } from '../messages/message.service';
 import type { GlobalPresenceSession, RealtimeRoomSession } from '../realtime/realtime.repository';
-import { onlineRoomMembers } from '../realtime/presence-state';
+import {
+  connectionStatusView,
+  escalateConnectionState,
+  INITIAL_CONNECTION_STATE,
+  nextConnectionState,
+  RECONNECT_GRACE_MS,
+  type RealtimeConnectionEvent,
+  type RealtimeConnectionState,
+} from '../realtime/connection-status';
+import { onlineRoomMembers, presenceSummary } from '../realtime/presence-state';
+import { TypingSignal } from '../realtime/typing-signal';
 import { markRoomRead, watchAvailableRooms } from '../rooms/room.repository';
 import { renderAiSources } from '../bots/grounding.view';
 import type {
@@ -39,6 +49,16 @@ import { RoomScope, SessionScope } from './lifecycle';
 import { applyTheme, preferredTheme, storeTheme, watchSystemTheme, type Theme } from './theme';
 
 const REACTION_CHOICES = ['👍', '❤️', '😂'];
+
+/**
+ * A call the user asked for but that has not reached the call controller yet.
+ * It exists so the press is acknowledged in the same task it happened in, long
+ * before the call chunk, the callables or the transport SDK have loaded.
+ */
+interface PendingCall {
+  kind: 'voice' | 'video';
+  cancelled: boolean;
+}
 
 function byId<T extends HTMLElement>(id: string): T {
   const element = document.getElementById(id);
@@ -114,6 +134,9 @@ const ui = {
   uploadStatus: byId<HTMLElement>('upload-status'),
   voiceCall: byId<HTMLButtonElement>('voice-call-btn'),
   videoCall: byId<HTMLButtonElement>('video-call-btn'),
+  callPending: byId<HTMLElement>('call-pending'),
+  callPendingLabel: byId<HTMLElement>('call-pending-label'),
+  callPendingCancel: byId<HTMLButtonElement>('call-pending-cancel'),
 };
 
 let user: AuthenticatedUser | null = null;
@@ -141,7 +164,10 @@ let reactionUnsubscribe: (() => void) | null = null;
 let reactionWatchKey = '';
 let replyToId: string | undefined;
 let editingId: string | undefined;
-let typingTimer: number | undefined;
+let typingSignal: TypingSignal | null = null;
+let connectionState: RealtimeConnectionState = INITIAL_CONNECTION_STATE;
+let connectionEscalation: number | undefined;
+let pendingCall: PendingCall | null = null;
 let mentionChoices: Array<{ type: 'user' | 'bot'; id: string; label: string }> = [];
 let mentionIndex = 0;
 let mediaController: MediaUploadController | null = null;
@@ -183,8 +209,11 @@ function setRoomControls(enabled: boolean): void {
   for (const control of [ui.input, ui.send, ui.attach, ui.voiceMessage, ui.sticker]) {
     control.disabled = !enabled;
   }
-  ui.voiceCall.disabled = !enabled || Boolean(callController?.active);
-  ui.videoCall.disabled = !enabled || Boolean(callController?.active);
+  // `pendingCall` covers the window between the press and the call controller
+  // existing, which is exactly when a second press would start a second call.
+  const callBusy = Boolean(callController?.active) || Boolean(pendingCall);
+  ui.voiceCall.disabled = !enabled || callBusy;
+  ui.videoCall.disabled = !enabled || callBusy;
   ui.input.placeholder = enabled ? '輸入訊息或使用 @ 提及…' : '先選擇聊天室…';
 }
 
@@ -228,6 +257,10 @@ function closeRoom(): void {
   ui.messageView.hidden = true;
   ui.messageList.replaceChildren();
   ui.typing.textContent = '';
+  // The header and the member list both describe the room that just closed.
+  // Leaving them as they were is what made a switched-away room look connected.
+  pushConnection({ type: 'closed' });
+  renderPresenceList();
   setRoomControls(false);
   renderRooms();
 }
@@ -329,6 +362,7 @@ async function openRoom(nextRoomId: string): Promise<void> {
   renderRooms();
   const scope = new RoomScope();
   roomScope = scope;
+  pushConnection({ type: 'opening' });
 
   scope.add(watchRecentMessages(roomId, (page) => {
     const priorCount = messages.size;
@@ -359,7 +393,7 @@ async function openRoom(nextRoomId: string): Promise<void> {
   scope.add(() => reactionUnsubscribe?.());
 
   try {
-    const { connectRealtimeRoom } = await import('../realtime/realtime.repository');
+    const { connectRealtimeRoom, watchRealtimeConnection } = await import('../realtime/realtime.repository');
     const roomRealtime = await connectRealtimeRoom(roomId, {
       uid: user.uid,
       displayName: user.displayName || '使用者',
@@ -369,14 +403,34 @@ async function openRoom(nextRoomId: string): Promise<void> {
       return;
     }
     realtime = roomRealtime;
-    renderConnectionStatus(true, '已連線');
+    const signal = new TypingSignal(roomRealtime, () => failClosedRealtime());
+    typingSignal = signal;
+    scope.add(() => {
+      signal.dispose();
+      if (typingSignal === signal) typingSignal = null;
+    });
+    pushConnection({ type: 'established' });
+    // Every one of these can be delivered after the user has already switched
+    // rooms — dispose() stops future events, not the one already queued — so the
+    // owning scope is checked before any of them touches shared chrome.
+    scope.add(watchRealtimeConnection(
+      (connected) => {
+        if (scope !== roomScope) return;
+        pushConnection({ type: 'socket', connected, at: Date.now() });
+      },
+      () => { if (scope === roomScope) failClosedRealtime(); },
+    ));
     scope.add(roomRealtime.watchTyping((names) => {
+      if (scope !== roomScope) return;
       ui.typing.textContent = names.length ? `${names.slice(0, 3).join('、')} 正在輸入…` : '';
-    }, () => failClosedRealtime()));
-    scope.add(roomRealtime.watchAiDrafts((drafts) => renderRemoteDrafts(drafts), () => failClosedRealtime()));
+    }, () => { if (scope === roomScope) failClosedRealtime(); }));
+    scope.add(roomRealtime.watchAiDrafts((drafts) => {
+      if (scope !== roomScope) return;
+      renderRemoteDrafts(drafts);
+    }, () => { if (scope === roomScope) failClosedRealtime(); }));
     scope.add(() => void roomRealtime.close());
   } catch {
-    failClosedRealtime();
+    if (scope === roomScope) failClosedRealtime();
   }
 }
 
@@ -386,7 +440,7 @@ function handleRoomAccessError(error: Error): void {
 }
 
 function failClosedRealtime(): void {
-  renderConnectionStatus(false, '即時狀態尚未授權');
+  pushConnection({ type: 'unauthorized' });
   ui.typing.textContent = '';
 }
 
@@ -395,11 +449,47 @@ function failClosedPresence(): void {
   renderPresenceList();
 }
 
-function renderConnectionStatus(online: boolean, label: string): void {
+function pushConnection(event: RealtimeConnectionEvent): void {
+  applyConnectionState(nextConnectionState(connectionState, event));
+}
+
+function applyConnectionState(next: RealtimeConnectionState): void {
+  if (next === connectionState) return;
+  connectionState = next;
+  renderConnectionStatus();
+  armConnectionEscalation();
+}
+
+/**
+ * A socket that stays down emits nothing, so `reconnecting` would never become
+ * `offline` on its own. The timer is what keeps a debounced blip from turning
+ * into a permanently optimistic header.
+ */
+function armConnectionEscalation(): void {
+  if (connectionEscalation !== undefined) window.clearTimeout(connectionEscalation);
+  connectionEscalation = undefined;
+  if (connectionState.phase !== 'reconnecting' || connectionState.downSince === null) return;
+  const wait = Math.max(0, connectionState.downSince + RECONNECT_GRACE_MS - Date.now());
+  connectionEscalation = window.setTimeout(() => {
+    connectionEscalation = undefined;
+    applyConnectionState(escalateConnectionState(connectionState, Date.now()));
+  }, wait);
+}
+
+const STATUS_DOT_CLASS: Record<string, string> = {
+  neutral: 'status-dot',
+  pending: 'status-dot pending',
+  online: 'status-dot online',
+  warn: 'status-dot offline',
+  down: 'status-dot down',
+};
+
+function renderConnectionStatus(): void {
+  const view = connectionStatusView(connectionState);
   const dot = document.createElement('span');
-  dot.className = `status-dot ${online ? 'online' : 'offline'}`;
+  dot.className = STATUS_DOT_CLASS[view.tone] ?? 'status-dot';
   dot.setAttribute('aria-hidden', 'true');
-  ui.connection.replaceChildren(dot, document.createTextNode(label));
+  ui.connection.replaceChildren(dot, document.createTextNode(view.label));
 }
 
 function textOf(message: ChatMessage): string {
@@ -858,11 +948,9 @@ function updateComposer(): void {
   ui.input.style.height = 'auto';
   ui.input.style.height = `${Math.min(ui.input.scrollHeight, 150)}px`;
   updateMentionList();
-  if (realtime) {
-    void realtime.setTyping(Boolean(ui.input.value.trim())).catch(() => failClosedRealtime());
-    if (typingTimer) window.clearTimeout(typingTimer);
-    typingTimer = window.setTimeout(() => void realtime?.setTyping(false).catch(() => undefined), 1800);
-  }
+  // The signal is bound to one room session and owned by that room's scope, so
+  // a delayed cleanup can never reach the room the user switched to.
+  typingSignal?.update(Boolean(ui.input.value.trim()));
 }
 
 function updateMentionList(): void {
@@ -939,7 +1027,7 @@ async function loadOlder(): Promise<void> {
 
 function renderPresenceList(): void {
   ui.presenceList.replaceChildren();
-  ui.presenceCount.textContent = `${onlineUsers.length} 位在線`;
+  ui.presenceCount.textContent = presenceSummary(onlineUsers.length, Boolean(roomId));
   for (const online of onlineUsers) {
     const item = document.createElement('div');
     item.className = 'presence-item';
@@ -1039,21 +1127,79 @@ async function runVoiceAction(action: (controller: VoiceMessageController) => vo
   }
 }
 
+/**
+ * Acknowledging the press is synchronous on purpose. Everything the call needs -
+ * the call controller chunk, the panel, the transport SDK, three callables and a
+ * media permission prompt - is behind at least one await, and until this ran the
+ * only thing that changed on screen was two buttons greying out, several hundred
+ * milliseconds later.
+ */
+function showCallPending(kind: 'voice' | 'video', mode: 'start' | 'join'): PendingCall {
+  const pending: PendingCall = { kind, cancelled: false };
+  pendingCall = pending;
+  ui.callPendingLabel.textContent = `${mode === 'join' ? '正在加入' : '正在建立'}${kind === 'video' ? '視訊' : '語音'}通話…`;
+  ui.callPendingCancel.disabled = false;
+  ui.callPending.hidden = false;
+  setRoomControls(Boolean(roomId));
+  return pending;
+}
+
+function hideCallPending(pending: PendingCall): void {
+  if (pendingCall !== pending) return;
+  pendingCall = null;
+  ui.callPending.hidden = true;
+  setRoomControls(Boolean(roomId));
+}
+
+function cancelPendingCall(): void {
+  if (!pendingCall) return;
+  pendingCall.cancelled = true;
+  ui.callPendingCancel.disabled = true;
+  ui.callPendingLabel.textContent = '正在取消通話…';
+}
+
 async function beginCall(kind: 'voice' | 'video'): Promise<void> {
-  if (!roomId) return;
+  const clickedAt = performance.now();
+  if (!roomId || pendingCall || callController?.active) return;
+  const pending = showCallPending(kind, 'start');
+  const acknowledgedAt = performance.now();
+  const currentRoomId = roomId;
   try {
-    await (await getCallController()).begin(roomId, kind);
+    const controller = await getCallController();
+    // Cancelled before the callable ran: nothing exists to unwind.
+    if (pending.cancelled) return;
+    await controller.begin(currentRoomId, kind, { clickedAt, acknowledgedAt });
+    // Cancelled while it was being built. The call is real now, so it leaves
+    // through the ordinary hang-up path rather than being abandoned - the
+    // one-call-per-room lock is released by the server, not by us.
+    if (pending.cancelled) await controller.finish();
   } catch (error) {
     toast(errorText(error), 'error');
+  } finally {
+    hideCallPending(pending);
   }
 }
 
 async function joinCall(messageRoomId: string, call: RoomCall): Promise<void> {
-  if (messageRoomId !== roomId) return;
+  const clickedAt = performance.now();
+  if (messageRoomId !== roomId || pendingCall || callController?.active) return;
+  const pending = showCallPending(call.kind, 'join');
+  const acknowledgedAt = performance.now();
+  const currentRoomId = roomId;
   try {
-    await (await getCallController()).join({ roomId, callId: call.callId, kind: call.kind });
+    const controller = await getCallController();
+    if (pending.cancelled) return;
+    await controller.join({
+      roomId: currentRoomId,
+      callId: call.callId,
+      kind: call.kind,
+      timing: { clickedAt, acknowledgedAt },
+    });
+    if (pending.cancelled) await controller.finish();
   } catch (error) {
     toast(errorText(error), 'error');
+  } finally {
+    hideCallPending(pending);
   }
 }
 
@@ -1139,6 +1285,11 @@ function beginSession(nextUser: AuthenticatedUser): void {
   ui.accountEmail.textContent = nextUser.email || '';
   ui.accountAvatar.textContent = initialOf(nextUser.displayName);
   void saveOwnProfile(nextUser).catch((error) => toast(errorText(error), 'error'));
+  // `bootstrap.ts` owns applying the theme to the document for the whole page,
+  // including the auth screen this controller is not loaded for. All that is
+  // left here is keeping the toggle in step, and it is released with the session
+  // rather than living for the lifetime of the tab.
+  scope.add(watchSystemTheme((theme) => { ui.theme.checked = theme === 'dark'; }));
   scope.add(watchAvailableRooms(nextUser.uid, (available, states) => {
     rooms = new Map(available.map((room) => [room.id, room]));
     roomStates = states;
@@ -1229,7 +1380,7 @@ function bindEvents(): void {
     storeTheme(theme);
     setTheme(theme);
   });
-  watchSystemTheme(setTheme);
+  ui.callPendingCancel.addEventListener('click', () => cancelPendingCall());
   ui.push.addEventListener('change', () => {
     const currentUser = user;
     const currentScope = sessionScope;

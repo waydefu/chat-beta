@@ -38,6 +38,9 @@ async function openSignedInApp(user: AuthenticatedUser, expectedGeneration: numb
 
 export function bootstrap(): void {
   applyTheme(preferredTheme());
+  // Page-level on purpose: the auth screen is on screen before the chat
+  // controller is imported and after sign-out, so applying the theme to the
+  // document is owned here for the whole page and nowhere else.
   watchSystemTheme(applyTheme);
   login.addEventListener('click', () => void loginWithGoogle().catch(showError));
   logoutButton.addEventListener('click', () => void (async () => {
