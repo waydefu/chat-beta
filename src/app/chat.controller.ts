@@ -58,6 +58,13 @@ const REACTION_CHOICES = ['👍', '❤️', '😂'];
 interface PendingCall {
   kind: 'voice' | 'video';
   cancelled: boolean;
+  /**
+   * Set as soon as the call chunk resolves. Cancelling has to reach the
+   * controller while `begin()` is still running - that is what aborts the token
+   * request, the transport connect and the media prompt - so the button cannot
+   * wait for `begin()` to settle before it acts.
+   */
+  controller: CallUIController | null;
 }
 
 function byId<T extends HTMLElement>(id: string): T {
@@ -1135,7 +1142,7 @@ async function runVoiceAction(action: (controller: VoiceMessageController) => vo
  * milliseconds later.
  */
 function showCallPending(kind: 'voice' | 'video', mode: 'start' | 'join'): PendingCall {
-  const pending: PendingCall = { kind, cancelled: false };
+  const pending: PendingCall = { kind, cancelled: false, controller: null };
   pendingCall = pending;
   ui.callPendingLabel.textContent = `${mode === 'join' ? '正在加入' : '正在建立'}${kind === 'video' ? '視訊' : '語音'}通話…`;
   ui.callPendingCancel.disabled = false;
@@ -1156,6 +1163,13 @@ function cancelPendingCall(): void {
   pendingCall.cancelled = true;
   ui.callPendingCancel.disabled = true;
   ui.callPendingLabel.textContent = '正在取消通話…';
+  // Reach the in-flight attempt now rather than after it settles. `finish()`
+  // aborts the controller's AbortController, which is what the token callable,
+  // the transport connect and the media prompt are all listening on; waiting for
+  // `begin()` to resolve first would have made the button cost a full connect.
+  // If the server call already exists, `finish()` is also what ends it and
+  // releases `activeCallId` - cancelling must never leave the room locked.
+  void pendingCall.controller?.finish().catch(() => undefined);
 }
 
 async function beginCall(kind: 'voice' | 'video'): Promise<void> {
@@ -1166,6 +1180,7 @@ async function beginCall(kind: 'voice' | 'video'): Promise<void> {
   const currentRoomId = roomId;
   try {
     const controller = await getCallController();
+    pending.controller = controller;
     // Cancelled before the callable ran: nothing exists to unwind.
     if (pending.cancelled) return;
     await controller.begin(currentRoomId, kind, { clickedAt, acknowledgedAt });
@@ -1188,6 +1203,7 @@ async function joinCall(messageRoomId: string, call: RoomCall): Promise<void> {
   const currentRoomId = roomId;
   try {
     const controller = await getCallController();
+    pending.controller = controller;
     if (pending.cancelled) return;
     await controller.join({
       roomId: currentRoomId,

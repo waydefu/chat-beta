@@ -130,6 +130,35 @@ describe('call service orchestration', () => {
       .resolves.toMatchObject({ status: 'ringing' });
   });
 
+  it('reports an abort raised while the transport is still connecting', async () => {
+    const controller = new AbortController();
+    callFunctionMock.mockImplementation(async (name: string, data: { operationId?: string }) => {
+      if (name === 'startLiveKitCallV2') return { callId: data.operationId, status: 'creating' };
+      if (name === 'failLiveKitCall') return { status: 'failed' };
+      throw new Error(`unexpected callable ${name}`);
+    });
+    // The provider observes the signal itself; this stands in for the real one
+    // tearing down its room when the cancel button fires mid-connect.
+    const join = vi.fn(async (_options: unknown, signal: AbortSignal) => {
+      controller.abort();
+      signal.throwIfAborted();
+      return session();
+    });
+
+    await expect(startCall(provider(join), base, controller.signal)).rejects.toMatchObject({
+      code: 'call', message: '通話連線已取消。',
+    });
+    // Cancelling must not strand the room lock: the call was created, so the
+    // rollback has to reach the server under the same operation id.
+    expect(callFunctionMock.mock.calls.map((entry) => entry[0])).toEqual([
+      'startLiveKitCallV2', 'failLiveKitCall',
+    ]);
+    expect(callFunctionMock.mock.calls[1]?.[1]).toMatchObject({
+      callId: callFunctionMock.mock.calls[0]?.[1].operationId,
+      category: 'aborted',
+    });
+  });
+
   it('uses limited-use App Check tokens for every service transition', async () => {
     callFunctionMock.mockImplementation(async (name: string) => {
       if (name === 'confirmLiveKitCall') return { callId: 'call', status: 'active', connectedAtMs: 1 };
