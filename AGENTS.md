@@ -1,6 +1,8 @@
 # AGENTS.md — Chat Lite 3.0
 
-Canonical agent context for this repository, written for Hermes Agent + Gemini 3.x; the rules apply to any coding agent. Nested `AGENTS.md` files load progressively as an agent enters a subtree. There is deliberately no `HERMES.md` or `CLAUDE.md` — one location, so the same rule cannot drift in three places.
+Canonical agent context for this repository, written for Hermes Agent + Gemini 3.x; the rules apply to any coding agent. Nested `AGENTS.md` files load progressively as an agent enters a subtree. Architecture, invariants and routing live here and only here, so the same rule cannot drift across agents.
+
+Claude Code does not read `AGENTS.md`, so the repository also carries a `CLAUDE.md`. It imports this file rather than restating it, and adds only Claude-specific operating behaviour — task classification, verification claims, parallel-agent safety, and the map of `.claude/rules`, `.claude/skills` and the guard hook. Anything factual about the repository belongs here, not there.
 
 Production real-time chat web app. Vanilla TypeScript + Vite client on Firebase Hosting; Firebase Functions (TypeScript, Node 22, gen2, region `asia-east1`) is the only trusted server. Firebase project `f-chat-wayde-fu`. UI language is Traditional Chinese — user-facing strings stay zh-TW.
 
