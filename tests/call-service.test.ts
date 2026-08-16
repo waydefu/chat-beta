@@ -66,7 +66,7 @@ describe('call service orchestration', () => {
       if (name === 'failLiveKitCall') return { status: 'failed' };
       throw new Error(`unexpected callable ${name}`);
     });
-    const join = vi.fn(async () => session());
+    const join = vi.fn<CallProvider['join']>(async () => session());
 
     await expect(startCall(provider(join), base, controller.signal)).rejects.toMatchObject({
       code: 'call', message: '通話連線已取消。',
@@ -157,6 +157,58 @@ describe('call service orchestration', () => {
       callId: callFunctionMock.mock.calls[0]?.[1].operationId,
       category: 'aborted',
     });
+  });
+
+  it('hands the inline grant to the transport instead of spending a second round trip', async () => {
+    const grant = { url: 'wss://provider.example', token: 'grant-token' };
+    callFunctionMock.mockImplementation(async (name: string, data: { operationId?: string }) => {
+      if (name === 'startLiveKitCallV2') return { callId: data.operationId, status: 'creating', grant };
+      if (name === 'confirmLiveKitCall') return { callId: data.operationId, status: 'ringing', connectedAtMs: 1 };
+      throw new Error(`unexpected callable ${name}`);
+    });
+    const join = vi.fn<CallProvider['join']>(async () => session());
+
+    await startCall(provider(join), base, new AbortController().signal);
+
+    // Every RTC round trip costs the client a fresh limited-use App Check
+    // attestation, which measured far larger than the handler behind it. The
+    // grant is already proven by the transition that returned it.
+    expect(join.mock.calls[0]?.[0]).toMatchObject({ credential: grant });
+    expect(callFunctionMock.mock.calls.map((entry) => entry[0]))
+      .toEqual(['startLiveKitCallV2', 'confirmLiveKitCall']);
+  });
+
+  it('leaves the transport to fetch its own grant when the server does not inline one', async () => {
+    callFunctionMock.mockImplementation(async (name: string, data: { operationId?: string }) => {
+      if (name === 'startLiveKitCallV2') return { callId: data.operationId, status: 'creating' };
+      return { callId: data.operationId, status: 'ringing', connectedAtMs: 1 };
+    });
+    const join = vi.fn<CallProvider['join']>(async () => session());
+
+    await startCall(provider(join), base, new AbortController().signal);
+
+    // Hosting and Functions deploy separately, so a new client must still work
+    // against a server that predates the inline grant.
+    expect(join.mock.calls[0]?.[0]).toMatchObject({ credential: undefined });
+  });
+
+  it('hands an accepted invitation its inline grant too', async () => {
+    const grant = { url: 'wss://provider.example', token: 'callee-token' };
+    callFunctionMock.mockImplementation(async (name: string) => {
+      if (name === 'respondLiveKitCall') return { callId: 'call', status: 'accepted', grant };
+      if (name === 'confirmLiveKitCall') return { callId: 'call', status: 'active', connectedAtMs: 1 };
+      throw new Error(`unexpected callable ${name}`);
+    });
+    const join = vi.fn<CallProvider['join']>(async () => session());
+
+    await joinCall(provider(join), {
+      roomId: 'room', callId: 'call', kind: 'voice', stage: {} as HTMLElement,
+      onParticipants: vi.fn(), onTransportState: vi.fn(),
+    }, new AbortController().signal);
+
+    expect(join.mock.calls[0]?.[0]).toMatchObject({ credential: grant });
+    expect(callFunctionMock.mock.calls.map((entry) => entry[0]))
+      .toEqual(['respondLiveKitCall', 'confirmLiveKitCall']);
   });
 
   it('uses limited-use App Check tokens for every service transition', async () => {

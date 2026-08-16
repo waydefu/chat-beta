@@ -7,11 +7,26 @@ export type CallTransportState = 'connecting' | 'connected' | 'reconnecting' | '
 
 import type { CallTimingRecorder } from '../call-timing';
 
+/**
+ * A transport credential the server already issued. The lifecycle callables
+ * establish the right to join before they return, so they can hand the grant
+ * back inline and save the client a whole extra round trip - each of which
+ * costs a fresh limited-use App Check attestation. Absent means the provider
+ * fetches its own, which is still the path for a callee joining out of band
+ * and for a server that predates the inline grant.
+ */
+export interface CallTransportCredential {
+  url: string;
+  token: string;
+}
+
 export interface CallJoinOptions {
   roomId: string;
   callId: string;
   audio: boolean;
   video: boolean;
+  /** Issued alongside the transition that authorised this join, when available. */
+  credential?: CallTransportCredential | undefined;
   /** Optional stage recorder; the provider owns the transport-side stages. */
   timeline?: CallTimingRecorder;
   /**

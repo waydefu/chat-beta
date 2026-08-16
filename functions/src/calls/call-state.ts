@@ -47,6 +47,15 @@ export function isResumableRequestedCall(input: {
     && input.call.leaseExpiresAtMs > input.nowMs;
 }
 
+/**
+ * Whether a call in this status may be handed a transport grant. `ending` is a
+ * live status but is never joinable, so a grant minted for it would outlive the
+ * call it belongs to.
+ */
+export function isGrantableCallStatus(status: unknown): status is Exclude<LiveCallStatus, 'ending'> {
+  return isLiveCallStatus(status) && status !== 'ending';
+}
+
 export function staleTerminalStatus(status: LiveCallStatus): TerminalCallStatus {
   if (status === 'creating') return 'failed';
   if (status === 'ringing') return 'missed';

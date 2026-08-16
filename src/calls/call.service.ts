@@ -1,7 +1,13 @@
 import { callFunction } from '../firebase/callables';
 import { DomainError } from '../shared/errors/domain-error';
 import type { CallTimingRecorder } from './call-timing';
-import type { CallParticipant, CallProvider, CallSession, CallTransportState } from './providers/call-provider';
+import type {
+  CallParticipant,
+  CallProvider,
+  CallSession,
+  CallTransportCredential,
+  CallTransportState,
+} from './providers/call-provider';
 import { RTC_CALLABLE_OPTIONS } from './rtc-callable-options';
 
 type ServerCallStatus = 'creating' | 'ringing' | 'active' | 'ending' | 'ended' | 'failed' | 'rejected' | 'missed' | 'cancelled';
@@ -10,6 +16,17 @@ interface ServerCallResponse {
   callId: string;
   status: ServerCallStatus;
   connectedAtMs?: number;
+}
+
+/**
+ * `startLiveKitCallV2` and an accepted `respondLiveKitCall` have already proved
+ * the caller may join by the time they answer, so they return the transport
+ * grant inline. Optional because a server that predates it simply omits it, and
+ * because the mint is deliberately best-effort there - the provider falls back
+ * to `getLiveKitTokenV2` either way.
+ */
+interface GrantedCallResponse extends ServerCallResponse {
+  grant?: CallTransportCredential;
 }
 
 export interface StartCallRequest {
@@ -110,7 +127,7 @@ export async function startCall(
       roomId: string;
       kind: string;
       operationId: string;
-    }, ServerCallResponse>('startLiveKitCallV2', {
+    }, GrantedCallResponse>('startLiveKitCallV2', {
       roomId: request.roomId,
       kind: request.kind,
       operationId,
@@ -124,6 +141,7 @@ export async function startCall(
       callId,
       audio: true,
       video: request.kind === 'video',
+      credential: started.grant,
       stage: request.stage,
       timeline: request.timeline,
       onParticipants: request.onParticipants,
@@ -155,7 +173,11 @@ export async function joinCall(
 ): Promise<ConnectedCall> {
   provider.prepare?.();
   try {
-    await callFunction('respondLiveKitCall', {
+    const accepted = await callFunction<{
+      roomId: string;
+      callId: string;
+      action: string;
+    }, GrantedCallResponse>('respondLiveKitCall', {
       roomId: request.roomId,
       callId: request.callId,
       action: 'accepted',
@@ -167,6 +189,7 @@ export async function joinCall(
       callId: request.callId,
       audio: true,
       video: request.kind === 'video',
+      credential: accepted.grant,
       stage: request.stage,
       timeline: request.timeline,
       onParticipants: request.onParticipants,
