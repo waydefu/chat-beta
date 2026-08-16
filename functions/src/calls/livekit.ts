@@ -13,6 +13,7 @@ import {
   confirmedCallStatus,
   decideCallStart,
   isCallStatus,
+  isGrantableCallStatus,
   isLiveCallStatus,
   isResumableRequestedCall,
   isTerminalCallStatus,
@@ -111,6 +112,80 @@ function assertJoinableCall(data: DocumentData | undefined, uid: string, nowMs: 
   return data.status;
 }
 
+/**
+ * The transport grant. Callables that have *already* established the caller may
+ * join return it inline so the client does not spend a second round trip on
+ * `getLiveKitTokenV2`. Every round trip costs the client a fresh limited-use
+ * App Check attestation, which measured far larger than the handler itself, so
+ * the round trip - not the server work - is what is worth removing.
+ */
+interface LiveKitGrant {
+  url: string;
+  token: string;
+  expiresIn: number;
+}
+
+/**
+ * The single place a LiveKit grant is minted. The publish sources are derived
+ * from the call kind, never from the client: a voice call must not be handed a
+ * camera grant.
+ */
+async function issueLiveKitGrant(input: {
+  roomId: string;
+  callId: string;
+  kind: unknown;
+  identity: string;
+  displayName: string;
+  role: string;
+}): Promise<LiveKitGrant> {
+  const publishSources = [
+    TrackSource.MICROPHONE,
+    TrackSource.SCREEN_SHARE,
+    TrackSource.SCREEN_SHARE_AUDIO,
+    ...(input.kind === 'video' ? [TrackSource.CAMERA] : []),
+  ];
+  const rtcRoom = `room_${Buffer.from(input.roomId).toString('base64url')}_${input.callId}`;
+  const token = new AccessToken(livekitApiKey.value(), livekitApiSecret.value(), {
+    identity: input.identity,
+    name: input.displayName,
+    ttl: '10m',
+    metadata: JSON.stringify({ roomId: input.roomId, callId: input.callId, role: input.role }),
+  });
+  token.addGrant({
+    room: rtcRoom,
+    roomJoin: true,
+    canPublish: true,
+    canSubscribe: true,
+    canPublishData: false,
+    canPublishSources: publishSources,
+  });
+  return { url: livekitUrl.value(), token: await token.toJwt(), expiresIn: 600 };
+}
+
+/**
+ * Best-effort inline grant for a caller/callee whose transition has *already*
+ * committed. A mint failure must never fail the transition it is attached to -
+ * that would strand a `creating` call and the room lock behind a token problem -
+ * so it degrades to no grant and the client falls back to `getLiveKitTokenV2`.
+ */
+async function tryIssueLiveKitGrant(
+  input: Parameters<typeof issueLiveKitGrant>[0] & { status: unknown; operation: string },
+): Promise<LiveKitGrant | undefined> {
+  if (!isGrantableCallStatus(input.status)) return undefined;
+  try {
+    return await issueLiveKitGrant(input);
+  } catch (error) {
+    logger.warn('RTC inline grant skipped', {
+      operation: input.operation,
+      roomId: input.roomId,
+      callId: input.callId,
+      result: 'grant-unavailable',
+      errorCategory: error instanceof Error ? error.name : 'unknown',
+    });
+    return undefined;
+  }
+}
+
 export const getLiveKitTokenV2 = onCall(
   {
     region: REGION,
@@ -135,36 +210,29 @@ export const getLiveKitTokenV2 = onCall(
       return callSnapshot.data();
     });
     assertJoinableCall(call, auth.uid, Date.now());
-    const publishSources = [
-      TrackSource.MICROPHONE,
-      TrackSource.SCREEN_SHARE,
-      TrackSource.SCREEN_SHARE_AUDIO,
-      ...(call?.kind === 'video' ? [TrackSource.CAMERA] : []),
-    ];
-    const rtcRoom = `room_${Buffer.from(roomId).toString('base64url')}_${callId}`;
-    const token = new AccessToken(livekitApiKey.value(), livekitApiSecret.value(), {
+    const grant = await issueLiveKitGrant({
+      roomId,
+      callId,
+      kind: call?.kind,
       identity: auth.uid,
-      name: membership.displayName,
-      ttl: '10m',
-      metadata: JSON.stringify({ roomId, callId, role: membership.role }),
-    });
-    token.addGrant({
-      room: rtcRoom,
-      roomJoin: true,
-      canPublish: true,
-      canSubscribe: true,
-      canPublishData: false,
-      canPublishSources: publishSources,
+      displayName: membership.displayName,
+      role: membership.role,
     });
     logger.info('RTC token issued', {
       operation: 'rtc.token', roomId, callId, result: 'issued', durationMs: Date.now() - startedAt,
     });
-    return { url: livekitUrl.value(), token: await token.toJwt(), expiresIn: 600 };
+    return grant;
   },
 );
 
 export const startLiveKitCallV2 = onCall(
-  { region: REGION, enforceAppCheck: ENFORCE_APP_CHECK, consumeAppCheckToken: ENFORCE_APP_CHECK },
+  {
+    region: REGION,
+    enforceAppCheck: ENFORCE_APP_CHECK,
+    consumeAppCheckToken: ENFORCE_APP_CHECK,
+    // Held so the created call can carry its grant back in the same response.
+    secrets: [livekitUrl, livekitApiKey, livekitApiSecret],
+  },
   async (request) => {
     const startedAt = Date.now();
     const auth = requireAuth(request);
@@ -280,10 +348,27 @@ export const startLiveKitCallV2 = onCall(
       });
       return { callId, kind, status: 'creating' as const };
     });
-    logger.info('RTC call intent created', {
-      operation: 'rtc.start', roomId, callId, result: result.status, durationMs: Date.now() - startedAt,
+    // Minted only after the lock and the transition have committed, so a token
+    // problem can never leave a half-created call holding `activeCallId`.
+    const grant = await tryIssueLiveKitGrant({
+      roomId,
+      callId,
+      kind: result.kind,
+      status: result.status,
+      identity: auth.uid,
+      displayName: membership.displayName,
+      role: membership.role,
+      operation: 'rtc.start',
     });
-    return result;
+    logger.info('RTC call intent created', {
+      operation: 'rtc.start',
+      roomId,
+      callId,
+      result: result.status,
+      grant: grant ? 'inline' : 'deferred',
+      durationMs: Date.now() - startedAt,
+    });
+    return { ...result, grant };
   },
 );
 
@@ -349,7 +434,13 @@ export const confirmLiveKitCall = onCall(
 );
 
 export const respondLiveKitCall = onCall(
-  { region: REGION, enforceAppCheck: ENFORCE_APP_CHECK, consumeAppCheckToken: ENFORCE_APP_CHECK },
+  {
+    region: REGION,
+    enforceAppCheck: ENFORCE_APP_CHECK,
+    consumeAppCheckToken: ENFORCE_APP_CHECK,
+    // Held so an accepted invitation can carry its grant back in the same response.
+    secrets: [livekitUrl, livekitApiKey, livekitApiSecret],
+  },
   async (request) => {
     const startedAt = Date.now();
     const auth = requireAuth(request);
@@ -358,7 +449,7 @@ export const respondLiveKitCall = onCall(
     const callId = requireOperationId(data.callId);
     const action = data.action === 'accepted' ? 'accepted' : data.action === 'rejected' ? 'rejected' : null;
     if (!action) throw rtcError('CALL_RESPONSE_INVALID', '來電回應不正確。', 'invalid-argument');
-    await getActiveMembership(roomId, auth.uid);
+    const membership = await getActiveMembership(roomId, auth.uid);
     const callRef = firestore.doc(`rooms/${roomId}/calls/${callId}`);
     const roomRef = firestore.doc(`rooms/${roomId}`);
     const signalRef = firestore.doc(`users/${auth.uid}/incomingCalls/${callSignalDocumentId(roomId, callId)}`);
@@ -394,14 +485,33 @@ export const respondLiveKitCall = onCall(
         if (roomSnapshot.data()?.activeCallId === callId) {
           transaction.update(roomRef, { activeCallId: FieldValue.delete(), updatedAt: FieldValue.serverTimestamp() });
         }
-        return { callId, status: 'rejected' as const };
+        return { callId, status: 'rejected' as const, kind: call.kind, callStatus: 'rejected' };
       }
-      return { callId, status: action };
+      return { callId, status: action, kind: call.kind, callStatus: call.status };
     });
+    // Only an acceptance is about to join, so only an acceptance gets a grant;
+    // `isGrantableCallStatus` keeps a rejected or already-ending call from getting one.
+    const grant = result.status === 'accepted'
+      ? await tryIssueLiveKitGrant({
+        roomId,
+        callId,
+        kind: result.kind,
+        status: result.callStatus,
+        identity: auth.uid,
+        displayName: membership.displayName,
+        role: membership.role,
+        operation: 'rtc.respond',
+      })
+      : undefined;
     logger.info('RTC invitation response recorded', {
-      operation: 'rtc.respond', roomId, callId, result: result.status, durationMs: Date.now() - startedAt,
+      operation: 'rtc.respond',
+      roomId,
+      callId,
+      result: result.status,
+      grant: grant ? 'inline' : 'deferred',
+      durationMs: Date.now() - startedAt,
     });
-    return result;
+    return { callId: result.callId, status: result.status, grant };
   },
 );
 

@@ -26,13 +26,13 @@ export type CallTimingStage =
   | 'modulesReady'
   /** `startLiveKitCallV2` returned. */
   | 'callCreated'
-  /** `getLiveKitTokenV2` returned. */
+  /** The transport grant is in hand - inline from the transition, or fetched. */
   | 'tokenReceived'
   /** `livekit-client` finished downloading and parsing. */
   | 'sdkReady'
   /** The provider's transport reported connected. */
   | 'providerConnected'
-  /** Microphone and camera were acquired. */
+  /** Local tracks are acquired and published; acquisition overlaps the connect. */
   | 'mediaReady'
   /** `confirmLiveKitCall` returned. */
   | 'serverConfirmed';

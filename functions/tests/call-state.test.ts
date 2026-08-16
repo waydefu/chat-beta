@@ -6,6 +6,7 @@ import {
   decideCallStart,
   isResumableRequestedCall,
   requestedEndStatus,
+  isGrantableCallStatus,
   staleTerminalStatus,
   type CallStateSnapshot,
 } from '../src/calls/call-state.js';
@@ -64,6 +65,20 @@ describe('server call lifecycle policy', () => {
     expect(confirmedCallStatus('ringing', true)).toBe('ringing');
     expect(confirmedCallStatus('ringing', false)).toBe('active');
     expect(confirmedCallStatus('active', false)).toBe('active');
+  });
+
+  it('grants transport credentials only for a status that can still be joined', () => {
+    // A grant handed out here outlives the call it belongs to, so `ending` and
+    // every terminal status must stay ineligible even though `ending` is live.
+    expect(isGrantableCallStatus('creating')).toBe(true);
+    expect(isGrantableCallStatus('ringing')).toBe(true);
+    expect(isGrantableCallStatus('active')).toBe(true);
+    expect(isGrantableCallStatus('ending')).toBe(false);
+    for (const status of ['ended', 'failed', 'rejected', 'missed', 'cancelled']) {
+      expect(isGrantableCallStatus(status)).toBe(false);
+    }
+    expect(isGrantableCallStatus(undefined)).toBe(false);
+    expect(isGrantableCallStatus('nonsense')).toBe(false);
   });
 
   it('ends idempotently with an outcome that preserves pre-connection cancellation', () => {
