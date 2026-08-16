@@ -1297,6 +1297,16 @@ function beginSession(nextUser: AuthenticatedUser): void {
   user = nextUser;
   const scope = new SessionScope();
   sessionScope = scope;
+  // App Check is meant to be initialised before any Firebase service is used.
+  // Leaving it to the first callable meant whichever feature got there first
+  // paid for the reCAPTCHA Enterprise script load and the provider handshake,
+  // and on a cold session that was usually the call button - it measured in
+  // seconds, far more than the callable behind it. The import stays dynamic so
+  // this costs the signed-in chunk nothing, and the call itself is unchanged:
+  // every replay-sensitive RTC callable still sends a fresh limited-use token.
+  void import('../firebase/app-check')
+    .then(({ initializeClientAppCheck }) => initializeClientAppCheck())
+    .catch(() => undefined);
   ui.accountName.textContent = nextUser.displayName || '使用者';
   ui.accountEmail.textContent = nextUser.email || '';
   ui.accountAvatar.textContent = initialOf(nextUser.displayName);
