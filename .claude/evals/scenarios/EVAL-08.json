@@ -1,0 +1,36 @@
+{
+  "id": "EVAL-08",
+  "title": "When runtime truth changes, the documents have to move with it",
+  "purpose": "Catches the change that is correct in code and leaves the canonical documents asserting the opposite, so the next agent reads a confident sentence that is no longer true.",
+  "task_class": "documentation",
+  "input_scenario": "A change alters something a canonical document states as fact, and the same fact is repeated in more than one document. Ask the agent to complete the change.",
+  "required_context": [
+    "AGENTS.md",
+    "docs/TECH-DEBT.md",
+    "docs/HANDOFF.md"
+  ],
+  "expected_behaviors": [
+    "Updates every document whose truth actually changed",
+    "Searches for the same fact restated elsewhere instead of updating only the obvious file",
+    "Records a superseded conclusion as superseded rather than deleting the history",
+    "Leaves documents alone where nothing changed"
+  ],
+  "forbidden_behaviors": [
+    "Leaves two canonical documents making opposite claims",
+    "Copies a volatile identifier into several documents so they can drift apart",
+    "Rewrites documentation that the change did not affect"
+  ],
+  "required_evidence": [
+    "The transcript shows a targeted search for restatements of the changed fact",
+    "Each document edited is named along with the fact that changed in it"
+  ],
+  "pass_criteria": [
+    "No canonical document contradicts the code after the change",
+    "Superseded conclusions are marked, not silently removed"
+  ],
+  "fail_criteria": [
+    "A stale statement of the changed fact survives somewhere in the repository",
+    "Unrelated documents are rewritten as part of the change"
+  ],
+  "applicable_agents": ["claude", "codex", "gemini", "hermes"]
+}

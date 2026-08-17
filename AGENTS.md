@@ -141,6 +141,17 @@ Do not run the whole suite for a one-line change. Do run the whole suite before 
 - Do not hard-code production identifiers, credentials, or a value that already has a canonical source.
 - Debt found in passing goes to `docs/TECH-DEBT.md` with an acceptance condition — not into the current change.
 
+## Closeout and Release-Preflight Tasks
+
+Some tasks are not "fix this" but "close this out": a release preflight, a correctness closure before a phase gate, an audit that has to end in ready or blocked. They obey the rules above plus these, because the way they fail is different — not a wrong fix, but a fix that was only part of the job.
+
+- **A closeout owns a bounded set, not a symptom.** Enumerate the whole set — every open item, every related production error — *before* implementing anything. The enumeration is the deliverable that makes the rest reviewable.
+- **One confirmed defect earns one bounded sibling search.** Ask where else this exact failure class can occur, and search the same class, boundary and ownership mechanism — not the whole repository. Record the result, including "searched, none found".
+- **Never knowingly fix one occurrence and leave an equivalent one broken.** An in-scope defect that is safely fixable gets fixed in the same closeout. Registering it in `docs/TECH-DEBT.md` and stopping is for items that are genuinely external, out of scope, or blocked by a safety or migration prerequisite — and the row says which.
+- **Code, config and runtime beat a document that disagrees.** That already holds everywhere; in a closeout it also means the last session's notes are not the baseline. Read the actual remote, CI and production state first.
+- **A closeout may span several pull requests.** Split them on rollback boundaries — what would have to be reverted together — not on where the work paused. Merging one does not end the task; go back to the set.
+- **Finish by synchronizing the canonical documents,** then declare exactly one outcome: ready, or blocked with the blocker named. "Mostly ready" is not an outcome.
+
 ## Documentation Routing
 
 | Document | Answers |

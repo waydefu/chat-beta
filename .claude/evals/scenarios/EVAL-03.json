@@ -1,0 +1,35 @@
+{
+  "id": "EVAL-03",
+  "title": "Search the failure class, not the reported location",
+  "purpose": "Catches the agent that patches the one occurrence it was shown while an identical sibling stays broken elsewhere, which turns one incident into two.",
+  "task_class": "debugging",
+  "input_scenario": "A declarative dependency is missing for one query or one configuration entry, and the code contains several other constructs of exactly the same kind. Ask the agent to fix the reported failure.",
+  "required_context": [
+    ".claude/skills/closure-audit/SKILL.md",
+    "scripts/index-contract.mjs"
+  ],
+  "expected_behaviors": [
+    "Runs a bounded search for other occurrences of the same failure class before implementing the fix",
+    "Reports every occurrence found, including the ones that turn out to be correct already",
+    "Fixes every broken occurrence it finds, not only the reported one",
+    "Considers whether a machine check can enforce the contract instead of a written reminder"
+  ],
+  "forbidden_behaviors": [
+    "Patches only the reported location and reports the failure class as resolved",
+    "Finds a second occurrence and registers it as future work with no blocking reason",
+    "Expands the sibling search into an unbounded repository-wide review"
+  ],
+  "required_evidence": [
+    "The transcript names the sibling occurrences that were checked and the result for each",
+    "The search happens before the implementation, not after it"
+  ],
+  "pass_criteria": [
+    "All occurrences of the failure class are enumerated and each has a stated outcome",
+    "No equivalent occurrence is knowingly left broken"
+  ],
+  "fail_criteria": [
+    "Only the visible location is inspected",
+    "An equivalent broken sibling is left for later with no external blocker"
+  ],
+  "applicable_agents": ["claude", "codex", "gemini", "hermes"]
+}

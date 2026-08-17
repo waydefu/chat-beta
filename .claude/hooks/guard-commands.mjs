@@ -73,6 +73,18 @@ const RULES = [
       + 'reviewed migration with a backup recorded in docs/HANDOFF.md.',
   },
   {
+    family: 'production-data',
+    // The same destruction, reached through the other CLI. `gcloud firestore`
+    // has its own import, export, bulk-delete and database-delete verbs, and
+    // dropping an index is a production outage for whatever queries it served.
+    // Read-only verbs - list, describe - are deliberately not matched.
+    test: (t) => /\bgcloud\b[^\n]*\bfirestore\b[^\n]*\b(import|export|bulk-delete|delete|update)\b/.test(t)
+      || /\bgcloud\b[^\n]*\b(datastore)\b[^\n]*\b(import|export)\b/.test(t),
+    reason: 'Destructive gcloud Firestore operations are blocked: an index or database dropped here '
+      + 'is a production outage for every query that used it. Index changes ship through '
+      + 'firestore.indexes.json and the deploy workflow.',
+  },
+  {
     family: 'git',
     test: (t) => /\bpush\b[^\n]*(--force\b|--force-with-lease\b|\s-f\b|\s\+)/.test(t),
     reason: 'Force-push is blocked. Other branches in this repository are based on the pushed '
