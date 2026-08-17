@@ -44,6 +44,9 @@ const BLOCKED = [
   'git push origin main',
   'git reset --hard origin/main',
   'git checkout -- src/app/chat.controller.ts',
+  'git checkout HEAD -- firestore.indexes.json',
+  'git checkout origin/main -- docs/TECH-DEBT.md',
+  'git checkout .',
   'git restore src/utils.ts',
   'git clean -fd',
   'git branch -D agent/other-work',
@@ -71,6 +74,12 @@ const ALLOWED = [
   'git checkout main',
   'git restore --staged src/utils.ts',
   'git branch -d agent/merged',
+  // A commit message or a log query may quote a blocked command. Neither can
+  // touch the working tree, the remote or history, and a guard that blocks
+  // writing about itself teaches people to reword their way past it.
+  'git commit -m "block git checkout HEAD -- <path> as well"',
+  'git commit -m "explain why git reset --hard is denied"',
+  'git log --grep="git push --force"',
   'rm -rf node_modules',
   'rm dist/index.js',
   'gh pr create --fill',
