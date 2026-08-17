@@ -102,7 +102,13 @@ const RULES = [
   },
   {
     family: 'git',
-    test: (t) => /\bcheckout\s+(--\s|\.\s*$)/.test(t)
+    // `git checkout <ref> -- <path>` discards working-tree changes exactly as
+    // `git checkout -- <path>` does, and it is the spelling people reach for
+    // when they want a file "back the way it was". Matching only the bare form
+    // left the more explicit one open. `-b`, a plain branch name and `switch`
+    // carry no pathspec, so they are unaffected.
+    test: (t) => /\bcheckout\b[^\n]*\s--(\s|$)/.test(t)
+      || /\bcheckout\s+\.\s*$/.test(t)
       || (/\brestore\b/.test(t) && !/--staged/.test(t))
       || /\bclean\b[^\n]*\s-[a-z]*[fdx]/.test(t),
     reason: `Discarding working-tree changes is blocked. ${DIRTY_STATE_ALTERNATIVE}`,
@@ -159,6 +165,31 @@ function leader(segment) {
   return '';
 }
 
+/**
+ * The git subcommand: the first token after `git` that is not a flag or a
+ * `-c key=value` pair.
+ */
+function gitSubcommand(segment) {
+  const tokens = segment.split(/\s+/).map((token) => token.replace(/^["']+|["']+$/g, '')).filter(Boolean);
+  const start = tokens.findIndex((token) => token.split(/[\\/]/).pop()?.toLowerCase() === 'git');
+  for (let index = start + 1; index < tokens.length; index += 1) {
+    const token = tokens[index];
+    if (token === '-c') { index += 1; continue; }
+    if (token.startsWith('-')) continue;
+    return token.toLowerCase();
+  }
+  return '';
+}
+
+/**
+ * Subcommands that carry arbitrary prose and cannot touch the working tree,
+ * the remote or history. The rules below are textual, so a commit message or a
+ * log query that merely *mentions* `git checkout -- path` used to be denied —
+ * which made the guard block writing about the guard, and taught the reflex of
+ * rewording a message to get past a safety control.
+ */
+const PROSE_SUBCOMMANDS = new Set(['commit', 'log']);
+
 function onMainBranch() {
   try {
     return execFileSync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], {
@@ -202,6 +233,7 @@ function main() {
     if (READ_ONLY_LEADERS.has(lead)) continue;
 
     const isGit = lead === 'git';
+    if (isGit && PROSE_SUBCOMMANDS.has(gitSubcommand(segment))) continue;
     for (const rule of RULES) {
       if (isGit !== (rule.family === 'git')) continue;
       if (rule.test(text, segment)) deny(rule.reason);
