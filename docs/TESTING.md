@@ -12,4 +12,16 @@ PR 2 local gate：20個client unit tests通過，scoped statements coverage 87.9
 
 每個 phase 都必須通過 README 列出的完整 gate。Rules、Functions 或 migration 變更不能以「只有三位使用者」為由略過測試。
 
+## 可重複的 production 程序
+
+單元／Rules／Playwright 都到不了的幾件事，各自有固定作法。每一項都寫下前置條件、方法與通過標準，因為它們的失敗方式是「看起來正常」。
+
+**排程清理與索引驗證。** 綠色的部署 workflow 只證明指令回傳 0，不證明索引可用。先確認索引狀態為 READY（`gcloud firestore indexes fields describe <field> --collection-group=<group>`，或 composite 的對應指令），再手動觸發該支排程（`gcloud scheduler jobs run firebase-schedule-<function>-asia-east1 --location=asia-east1`），然後讀該 Function 的 log 確認沒有 `FAILED_PRECONDITION` 且有完成訊息。通過標準是 log 出現該 Function 自己的完成 log。注意刪除筆數為 0 不一定是失敗——先確認保留窗內是否真的有到期資料，再判讀。禁止為了製造測資而寫入 production。
+
+**真實斷網重連。** DevTools 的 Offline 不可靠：它常常不會真的拆掉已經建立的 WebSocket，2026-08-15 的一次假陰性就是這樣來的。要拔實體網路或關閉 Wi-Fi，維持 20 秒以上再恢復，全程開著 console。觀察連線狀態列的三個階段與 `realtime/presence` 的寫入結果。通過標準：恢復後 presence 自行回復，且其他帳號能重新看到這個使用者。
+
+**兩帳號 typing 異常終止。** 需要兩個真實帳號與兩個可獨立終止的瀏覽器 profile。B 開始輸入、A 看到「正在輸入…」之後，用工作管理員**結束 B 的行程**，不可用正常關閉分頁——正常關閉會觸發 `onDisconnect`，測不到要測的東西。計時到 A 的指示器消失為止，上限約 8 秒（`TYPING_STALE_AFTER_MS` 6 秒加最多一次 `TYPING_SWEEP_MS` 2 秒 sweep）。
+
+**RTC 分段量測。** 在 console 設 `localStorage['chat-lite:call-timing'] = '1'` 後重載，該 session 才會輸出。需要兩個真實帳號與真實音訊裝置。冷啟動與暖機要分開記錄，並且要把 client 觀測到的每段時間與 Cloud Logging 的 server 端數字並排——兩者的差額是瀏覽器端成本，和 server 端是不同的修法。詳見 [RTC](RTC.md)。
+
 效能 fixture 需包含 5,000 messages，檢查只訂閱載入訊息的 reactions、切房後 listener 歸零、長列表 memory、initial gzip <200kB，且 AI/Media/RTC/Search chunk 不進首屏。

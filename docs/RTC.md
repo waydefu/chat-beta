@@ -135,7 +135,11 @@ V2 名稱是 rollout boundary：production舊三支 `startLiveKitCall`／`getLiv
 
 **狀態：`PENDING-PRODUCTION-MEASUREMENT`。**
 
-上述三項已於 2026-08-16 部署到 production（backend run `31953276095`、hosting run `31953496673`，皆為 `aa646ac`），但**尚未取得任何一組部署後的分段數字**。取得方式與 BEFORE 相同：
+上述三項已於 2026-08-16 部署到 production（backend run `31953276095`、hosting run `31953496673`，皆為 `aa646ac`），但**尚未取得任何一組部署後的分段數字**。
+
+2026-08-17 覆核了「還在不在」這件事，因為量測只有對照到正確的 build 才有意義：RTC Functions 仍是 `aa646ac` 的那一版（`gcloud functions list` 的 update time 為 2026-08-16T14:41Z），client 已前進到 `4bb3ad7`（hosting run `31995531725`，production 目前提供 `assets/index-anPfP4ST.js`）。`4bb3ad7` 只改 presence heartbeat 的節點擁有權，不在通話路徑上，因此 BEFORE 對照仍然成立。`src/calls/call-timing.ts` 的階段與開關也未變更。
+
+取得方式與 BEFORE 相同：
 
 ```text
 localStorage['chat-lite:call-timing'] = '1'

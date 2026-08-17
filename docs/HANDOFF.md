@@ -1,6 +1,6 @@
 # Production handoff
 
-Last updated: 2026-08-14 (Asia/Taipei)
+Last updated: 2026-08-17 (Asia/Taipei)
 
 This document records the production state after the Chat Lite 3.0 ACL rollout. It is the starting point for the next operator. Never copy secret values, user IDs, migration artifacts, or production data into Git.
 
@@ -14,7 +14,8 @@ This document records the production state after the Chat Lite 3.0 ACL rollout. 
 | Billing account | `017AC8-677C35-503670` |
 | Primary region | `asia-east1` |
 | Production branch | `main` |
-| Deployed commit | `0a369e834b7ce2d6e26c7bd162bd674e45a8116c` |
+| Deployed commit (Hosting client) | `4bb3ad707f936eb390d84f9d3a64a4872f576e70` (run `31995531725`, 2026-08-17) |
+| Deployed commit (RTC Functions) | `aa646ac84fa7673c73df3c2f419d1fd8c9434696` (run `31953276095`, 2026-08-16) |
 | App Check | reCAPTCHA Enterprise key configured; monitor before enforcement |
 | FCM | production VAPID key configured |
 
@@ -194,6 +195,36 @@ without its index ships a Function that cannot run.
 - Observe for 24 hours, then hold the seven-day gate before removing the legacy
   RTC trio, `realtime/rooms/{roomKey}/presence` and the legacy push token
   documents. Earliest cleanup is 2026-08-21.
+
+### P3 correctness closure (2026-08-17)
+
+Three pull requests, two deployments. Merged commits: PR #46 `4eb21b4`, PR #47 `4bb3ad7`, PR #48 `5d2634c`. Quality gates passed on `5d2634c` (run `31995760155`).
+
+| Phase | Run | Commit | Result |
+| --- | --- | --- | --- |
+| `firestore_indexes` | `31994462556` | `4eb21b4` | success |
+| `hosting_client` | `31995531725` | `4bb3ad7` | success |
+
+`firestore_indexes` is new in PR #46: every other index-carrying phase also redeploys Functions, so repairing an index for already-deployed code used to cost an unrelated Function rollout.
+
+**Index readiness.** The workflow exiting 0 is not readiness. The `incomingCalls.expiresAt` `COLLECTION_GROUP` index reached `READY` at `04:31:43Z`, checked with `gcloud firestore indexes fields describe`.
+
+**Scheduled cleanup.** `firebase-schedule-cleanupExpiredCallSignals-asia-east1` was triggered manually at `04:32:26Z` and logged `rtc.signal.cleanup / complete / count 0 / 372 ms` with no `FAILED_PRECONDITION`. Before the index it had failed every run for days. A count of 0 is the correct answer here, not a silent failure: signal retention is seven days and the oldest signal in production expires `2026-08-21T05:07Z`, so the first real deletion is only observable from 2026-08-21.
+
+**Bundle verification.** Production serves `assets/index-anPfP4ST.js`, which is what run `31995531725` built from `4bb3ad7`. The previous release served `assets/index-DLao8hNd.js` from run `31953496673`. RTC Functions are unchanged at `aa646ac`.
+
+#### What still needs a person
+
+Four correctness rows cannot be closed from a terminal. Each needs two real Google accounts, and none of them can be substituted with a local gate. Acceptance conditions are in [TECH-DEBT](TECH-DEBT.md); the procedures are in [TESTING](TESTING.md).
+
+| Row | Needs | Why nothing here can do it |
+| --- | --- | --- |
+| TD-C1 | Two accounts, a real microphone, one genuinely cold session | Stage timings only exist against real callables and a real LiveKit negotiation |
+| TD-C2 | A real network disconnect of 20+ seconds | DevTools Offline does not reliably tear down an established WebSocket, and pulling the network would cut this session too |
+| TD-C3 | One account idle for two hours, and separately an account switch within five minutes | The two variables were mixed in the original report and have to be run apart |
+| TD-C4 | Two browser profiles, one killed from Task Manager | Closing a tab fires `onDisconnect`, which is the path this test must avoid |
+
+All four should be run against the currently deployed client (`4bb3ad7`, serving `assets/index-anPfP4ST.js`). TD-C2 and TD-C3 are re-tests of a fix, not of the original defect: their root cause is confirmed and fixed, and what remains is confirming the behaviour in production.
 
 ### Rules and Hosting
 
