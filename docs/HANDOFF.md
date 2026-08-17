@@ -233,6 +233,23 @@ Warm voice calls went from a 5101 ms median to 2334 ms, a 54% reduction, and the
 The cold-start half is **not** established. None of the seven captured calls was genuinely cold -- every one showed a 2.2-3.7 ms CORS preflight, where a Cloud Run cold start costs 1.5-2.9 s -- so the first call's 3559 ms is session-cold with a warm server, and comparing it to the 18613 ms cold baseline would repeat the attribution error that overturned the 2026-08-15 closure. What exists for cold start is server-side only: the caller's cost fell from 7379 ms across three services to 4661 ms across two, measured at `10:01:32Z`. Capturing the client stages for a genuinely cold call remains open and is recorded as such in the row.
 
 
+### TD-M1: global presence and revocation (2026-08-17)
+
+The row asked for `realtime/presence/{uid}` to be cleared during revocation. That fix was retracted rather than implemented, because it cannot work and would cause harm:
+
+- **It would not stick.** The node's write rule is `auth.uid === $uid` with no room condition, and a failed heartbeat calls `establish()`, which re-creates it. Any server-side delete is undone within one beat -- guaranteed by PR #47, merged earlier in this same closeout.
+- **It would blank other rooms.** The node has no room dimension. Deleting it because one room revoked the user would make them appear offline everywhere else they are still a member.
+- **The reported symptom does not reproduce.** `revokeRoomMember` sets the member document to `revoking` in its first transaction, and `watchRoomMembers` filters to `active`, so a revoked member leaves the list before any realtime cleanup runs.
+
+**What was actually wrong.** `onlineRoomMembers` — the projection that produces the online list — did not look at membership status at all. The entire guarantee rested on one `.filter()` clause in a different module that had no test of its own. Removing that clause put a revoked member straight back in the list, shown online, with nothing to catch it.
+
+The projection now checks status itself, and the invariant is pinned at three layers: the projection test (failing before the change, passing after), a new subscription test verified by mutating the filter away, and a rules test asserting that revocation closes the room mirror while leaving global presence self-writable — which is precisely why the original prescription was wrong.
+
+**Same-failure-class search.** RTDB holds exactly two subtrees. `realtime/presence/{uid}` is the only global per-user state; typing and activity are room-scoped and already cleared on revocation. Every removal path (`revokeRoomMember`, `completeRevocation`, `reconcileMembership`, `reconcileMembershipMirrors`, `removeOrphanRealtimeAccess`) funnels into `removeRealtimeAccess*`, and no room-deletion or account-deletion path exists. Searched, no sibling found.
+
+**Not a defect:** `realtime/presence/$uid` is readable by any authenticated user. That is deliberate and already asserted in `tests/rules.test.ts`, including that the parent is not enumerable.
+
+
 ### Rules and Hosting
 
 - Restrictive Firestore Rules are live.

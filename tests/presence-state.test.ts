@@ -59,6 +59,28 @@ describe('global presence projection', () => {
       { uid: 'alice', displayName: 'Alice', online: true },
     ]);
   });
+
+  // A revoked member keeps their global presence node: it is keyed by uid with
+  // no room dimension, their own client still owns the write, and the heartbeat
+  // rebuilds it within one beat of any server-side delete. So "revoked users are
+  // not shown online" cannot be a property of the presence data -- it has to be
+  // a property of this projection, which is the last place both facts meet.
+  it('never reports a member who is no longer active, however online they are', () => {
+    const revoking: RoomMembership[] = [
+      { userId: 'alice', displayName: 'Alice', role: 'member', status: 'active', version: 1 },
+      { userId: 'mallory', displayName: 'Mallory', role: 'member', status: 'revoking', version: 2 },
+    ];
+    expect(onlineRoomMembers(revoking, new Set(['alice', 'mallory']), 'self')).toEqual([
+      { uid: 'alice', displayName: 'Alice', online: true },
+    ]);
+  });
+
+  it('drops a revoked member even when they are the only one online', () => {
+    const revoking: RoomMembership[] = [
+      { userId: 'mallory', displayName: 'Mallory', role: 'member', status: 'revoking', version: 2 },
+    ];
+    expect(onlineRoomMembers(revoking, new Set(['mallory']), 'self')).toEqual([]);
+  });
 });
 
 describe('presence summary wording', () => {
