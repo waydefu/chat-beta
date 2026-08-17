@@ -211,7 +211,7 @@ Three pull requests, two deployments. Merged commits: PR #46 `4eb21b4`, PR #47 `
 
 **Scheduled cleanup.** `firebase-schedule-cleanupExpiredCallSignals-asia-east1` was triggered manually at `04:32:26Z` and logged `rtc.signal.cleanup / complete / count 0 / 372 ms` with no `FAILED_PRECONDITION`. Before the index it had failed every run for days. The scheduler's own invocation path is now covered too, which a manual trigger does not establish: the unattended cycles at `05:32`, `06:32`, `07:32` and `08:32` UTC all logged `complete / count 0` in 235-310 ms, and the service has produced no `WARNING`-or-above entry since its last `FAILED_PRECONDITION` at `03:41:47Z`. Across every Cloud Run service in the project, that was also the only source of `ERROR` entries in the surrounding nine hours, and there have been none anywhere since the index landed. A count of 0 is the correct answer here, not a silent failure: signal retention is seven days and the oldest signal in production expires `2026-08-21T05:07Z`, so the first real deletion is only observable from 2026-08-21.
 
-**Bundle verification.** Production serves `assets/index-anPfP4ST.js`, which is what run `31995531725` built from `4bb3ad7`. The previous release served `assets/index-DLao8hNd.js` from run `31953496673`. RTC Functions are unchanged at `aa646ac`.
+**Bundle verification.** At the time of this closure production served `assets/index-anPfP4ST.js`, which is what run `31995531725` built from `4bb3ad7`, replacing `assets/index-DLao8hNd.js` from run `31953496673`. That is the build the four rows below were tested against. It has since been superseded by the TD-M1 deploy recorded further down; RTC Functions are unchanged at `aa646ac` throughout.
 
 #### The four person-only rows, now closed
 
@@ -248,6 +248,10 @@ The projection now checks status itself, and the invariant is pinned at three la
 **Same-failure-class search.** RTDB holds exactly two subtrees. `realtime/presence/{uid}` is the only global per-user state; typing and activity are room-scoped and already cleared on revocation. Every removal path (`revokeRoomMember`, `completeRevocation`, `reconcileMembership`, `reconcileMembershipMirrors`, `removeOrphanRealtimeAccess`) funnels into `removeRealtimeAccess*`, and no room-deletion or account-deletion path exists. Searched, no sibling found.
 
 **Not a defect:** `realtime/presence/$uid` is readable by any authenticated user. That is deliberate and already asserted in `tests/rules.test.ts`, including that the parent is not enumerable.
+
+**Deployed and verified.** Run `32029941263` shipped the `hosting_client` phase from `2e018e3`. Production now serves `assets/index-DjaHyNZL.js`, replacing `assets/index-anPfP4ST.js`, and the deployed `chat.controller-D7aoKpNf.js` contains the guard as `status==="active"&&o.userId!==n&&` — the fix read back out of the shipped artifact rather than assumed from a green pipeline.
+
+No behavioural delta was expected or observed: the only caller already pre-filtered to active members, so the added condition is always true on the shipped path. Confirming a revoked member disappears from the list still needs two accounts and a room manager, and would be verifying behaviour that predates this change rather than anything it introduced.
 
 
 ### Rules and Hosting
