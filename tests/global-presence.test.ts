@@ -10,6 +10,10 @@ const state = vi.hoisted(() => ({
   disconnectRemovals: [] as string[],
   disconnectCancels: [] as string[],
   pushed: 0,
+  // The rule on this node validates the merged result, so a partial heartbeat
+  // update is rejected whenever the node is missing. These make that reachable.
+  failUpdate: 0,
+  failSet: 0,
 }));
 
 vi.mock('firebase/database', () => ({
@@ -23,14 +27,21 @@ vi.mock('firebase/database', () => ({
     remove: async () => { state.disconnectRemovals.push(target.path); },
     cancel: async () => { state.disconnectCancels.push(target.path); },
   }),
-  set: async (target: FakeRef, value: unknown) => { state.writes.push({ path: target.path, value }); },
-  update: async (target: FakeRef, value: unknown) => { state.updates.push({ path: target.path, value }); },
+  set: async (target: FakeRef, value: unknown) => {
+    state.writes.push({ path: target.path, value });
+    if (state.failSet > 0) { state.failSet -= 1; throw new Error('permission_denied'); }
+  },
+  update: async (target: FakeRef, value: unknown) => {
+    state.updates.push({ path: target.path, value });
+    if (state.failUpdate > 0) { state.failUpdate -= 1; throw new Error('permission_denied'); }
+  },
   remove: async (target: FakeRef) => { state.removed.push(target.path); },
   serverTimestamp: () => 'SERVER_TIMESTAMP',
 }));
 
 vi.mock('../src/firebase/realtime-client', () => ({ rtdb: {} }));
 
+import { PRESENCE_HEARTBEAT_MS } from '../src/realtime/presence-state';
 import { connectGlobalPresence } from '../src/realtime/realtime.repository';
 
 function emit(path: string, value: unknown): void {
@@ -49,6 +60,8 @@ beforeEach(() => {
   state.disconnectRemovals.length = 0;
   state.disconnectCancels.length = 0;
   state.pushed = 0;
+  state.failUpdate = 0;
+  state.failSet = 0;
 });
 
 afterEach(() => { vi.useRealTimers(); });
@@ -110,6 +123,67 @@ describe('global presence session', () => {
     await session.close();
     goOnline();
     expect(state.writes).toHaveLength(1);
+  });
+
+  it('restores a connection the server removed without any socket transition', async () => {
+    vi.useFakeTimers();
+    const session = await connect('me');
+    expect(state.writes).toHaveLength(1);
+
+    // The server ran onDisconnect for a drop this tab never saw, or the sweeper
+    // reaped the node while beats were throttled. `.info/connected` never
+    // toggles, so nothing re-establishes; the beat is rejected because a partial
+    // update cannot satisfy hasChildren(['state','connectedAt','updatedAt']).
+    // Before this fix every later beat was denied against a node that never
+    // came back: invisible to everyone else, header still saying connected.
+    state.failUpdate = 1;
+    await vi.advanceTimersByTimeAsync(PRESENCE_HEARTBEAT_MS);
+    expect(state.updates).toHaveLength(1);
+
+    await vi.waitFor(() => expect(state.writes).toHaveLength(2));
+    // Re-armed before the write, so the restored node is still reaped on a real
+    // disconnect instead of becoming the zombie the timestamp exists to catch.
+    expect(state.disconnectRemovals).toHaveLength(2);
+    await session.close();
+  });
+
+  it('keeps beating after a re-establish fails', async () => {
+    vi.useFakeTimers();
+    const session = await connect('me');
+    state.failSet = 1;
+    goOnline();
+    await vi.waitFor(() => expect(state.writes).toHaveLength(2));
+
+    // establish() stops the heartbeat before it writes. When the write failed,
+    // nothing restarted it and nothing else was watching, so presence ended for
+    // the rest of the session with no error anyone could see.
+    await vi.advanceTimersByTimeAsync(PRESENCE_HEARTBEAT_MS);
+    expect(state.updates.length).toBeGreaterThan(0);
+    await session.close();
+  });
+
+  it('does not raise a beat while the socket is known to be down', async () => {
+    vi.useFakeTimers();
+    const session = await connect('me');
+    emit('.info/connected', false);
+
+    // A beat raised while offline is queued by the SDK and flushed on reconnect
+    // — after the server removed the node and before establish() writes it back
+    // — so it can only ever be denied. The reconnect re-establishes anyway.
+    await vi.advanceTimersByTimeAsync(PRESENCE_HEARTBEAT_MS * 3);
+    expect(state.updates).toEqual([]);
+    await session.close();
+  });
+
+  it('releases its own listeners when the first establish fails', async () => {
+    state.failSet = 1;
+    const pending = connectGlobalPresence('me');
+    await vi.waitFor(() => expect(state.listeners.has('.info/connected')).toBe(true));
+    goOnline();
+    await expect(pending).rejects.toThrow();
+    // Nothing is handed back on this path, so nobody can call close(). The
+    // session has to release its own listeners or they outlive the tab.
+    expect(state.listeners.size).toBe(0);
   });
 
   it('reports a member online and drops them when the connection goes stale', async () => {
