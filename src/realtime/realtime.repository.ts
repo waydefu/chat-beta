@@ -61,6 +61,7 @@ export async function connectGlobalPresence(uid: string): Promise<GlobalPresence
   let inFlight: Promise<void> | null = null;
   let serverTimeOffset = 0;
   let closed = false;
+  let connected = false;
 
   const watchOffset = onValue(ref(rtdb, '.info/serverTimeOffset'), (snapshot) => {
     const value = snapshot.val();
@@ -78,10 +79,43 @@ export async function connectGlobalPresence(uid: string): Promise<GlobalPresence
   // from one whose onDisconnect never fired.
   function startHeartbeat(): void {
     stopHeartbeat();
-    heartbeat = setInterval(() => {
+    heartbeat = setInterval(() => void beat(), PRESENCE_HEARTBEAT_MS);
+  }
+
+  /**
+   * A beat is a partial update, and the rule on this node validates the merged
+   * result against `hasChildren(['state','connectedAt','updatedAt'])`. So a beat
+   * is not merely useless when the node is missing — it is rejected outright,
+   * and it is the reader's only evidence that this session is still alive.
+   *
+   * The node goes missing without any transition this tab can see. The server
+   * runs `onDisconnect` the moment it stops seeing the socket, which it can do
+   * while the SDK still reports connected, and `cleanupStalePresence` reaps a
+   * connection whose beats were throttled while the tab was in the background.
+   * `.info/connected` never goes false→true in either case, so the reconnect
+   * path below never runs, nothing rewrites the node, and every later beat is
+   * denied against a node that will never come back: the user is invisible to
+   * everyone else for the rest of the session while the header still says
+   * connected, and the console fills with `permission_denied`.
+   *
+   * The beat that failed is the only thing that knows, so it is what repairs it.
+   * `establish()` re-arms the disconnect removal before it writes, so a restored
+   * node is still reaped on a real disconnect rather than becoming the zombie
+   * the timestamp was added to catch.
+   */
+  async function beat(): Promise<void> {
+    if (closed) return;
+    // A beat raised while the socket is known to be down is queued by the SDK
+    // and flushed on reconnect — after the server has already removed the node
+    // and before `establish()` has written it back. It can only ever be denied,
+    // and the reconnect re-establishes anyway.
+    if (!connected) return;
+    try {
+      await update(connection, { updatedAt: serverTimestamp() });
+    } catch {
       if (closed) return;
-      void update(connection, { updatedAt: serverTimestamp() }).catch(() => undefined);
-    }, PRESENCE_HEARTBEAT_MS);
+      await establishOnce().catch(() => undefined);
+    }
   }
 
   // The server removes this node the moment the socket drops. Nothing restores
@@ -89,20 +123,25 @@ export async function connectGlobalPresence(uid: string): Promise<GlobalPresence
   // invisible to everyone else for the rest of the session.
   async function establish(): Promise<void> {
     stopHeartbeat();
-    await disconnect.remove();
-    if (closed) return;
-    await set(connection, {
-      state: 'online',
-      connectedAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
-    });
-    // close() may have run while that write was in flight; it would have found
-    // nothing to remove, so undo the write here instead of leaking a node.
-    if (closed) {
-      await removeIfPresent(connection);
-      return;
+    try {
+      await disconnect.remove();
+      if (closed) return;
+      await set(connection, {
+        state: 'online',
+        connectedAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+      // close() may have run while that write was in flight; it would have found
+      // nothing to remove, so undo the write here instead of leaking a node.
+      if (closed) await removeIfPresent(connection);
+    } finally {
+      // Even a failed attempt has to leave a beat behind. This runs on every
+      // reconnect, and the comment above it used to say "a later reconnect that
+      // fails is not fatal: the next one retries" — but there is no next one
+      // unless the socket happens to drop again. Without a beat, one failed
+      // re-establish ended presence for the rest of the session, silently.
+      if (!closed) startHeartbeat();
     }
-    startHeartbeat();
   }
 
   // .info/connected can report true more than once without an intervening
@@ -117,20 +156,32 @@ export async function connectGlobalPresence(uid: string): Promise<GlobalPresence
   }
 
   let watchConnected: Unsubscribe = () => undefined;
-  await new Promise<void>((resolve, reject) => {
-    let settled = false;
-    const settle = (cause?: Error): void => {
-      if (settled) return;
-      settled = true;
-      if (cause) reject(cause);
-      else resolve();
-    };
-    watchConnected = onValue(ref(rtdb, '.info/connected'), (snapshot) => {
-      if (closed || snapshot.val() !== true) return;
-      // A later reconnect that fails is not fatal: the next one retries.
-      void establishOnce().then(() => settle()).catch((error: Error) => settle(error));
-    }, (error) => settle(error));
-  });
+  try {
+    await new Promise<void>((resolve, reject) => {
+      let settled = false;
+      const settle = (cause?: Error): void => {
+        if (settled) return;
+        settled = true;
+        if (cause) reject(cause);
+        else resolve();
+      };
+      watchConnected = onValue(ref(rtdb, '.info/connected'), (snapshot) => {
+        connected = snapshot.val() === true;
+        if (closed || !connected) return;
+        // A later reconnect that fails is not fatal: the heartbeat retries.
+        void establishOnce().then(() => settle()).catch((error: Error) => settle(error));
+      }, (error) => settle(error));
+    });
+  } catch (error) {
+    // Nothing is handed back on this path, so nobody can ever call close().
+    // Release what has already started rather than leaving a timer and two
+    // listeners running for the lifetime of the tab.
+    closed = true;
+    stopHeartbeat();
+    watchConnected();
+    watchOffset();
+    throw error;
+  }
 
   return {
     watchOnlineUsers(userIds, next, error) {
