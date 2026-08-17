@@ -14,6 +14,14 @@
  * This file is the canonical list. `.claude/settings.json` repeats a small
  * core of it as `permissions.deny` rules on purpose: if this script is missing
  * or throws, the failure is non-blocking and the command would otherwise run.
+ *
+ * The matching is textual and per line, because a command is split on newlines
+ * the way a shell would run it. A heredoc body is therefore judged line by line
+ * as well, so a commit message or a PR description that *quotes* a blocked
+ * command is denied. That is deliberate and is not going to be fixed by
+ * teaching the guard to skip heredoc bodies: `bash <<EOF … EOF` executes its
+ * body, so ignoring heredocs would be a real bypass. Put long prose in a file
+ * and pass it with `-F` or `--body-file`.
  */
 
 import { readFileSync } from 'node:fs';
