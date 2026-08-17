@@ -72,10 +72,13 @@ Client 有些功能會走真實 callable；是否 production-ready 以 fresh Fun
 | `notification_backend` | `notifyOnMessage`、`sendStickerMessage` | 只檢查 `migration_verified` |
 | `rtc_backend` | RTC V2 start/token/end、confirm/respond/heartbeat/fail、signal sync、兩支 cleanup | `migration_verified` 與 `providers_verified` |
 | `ai_backend` | `generateGeminiReply`、`cleanupExpiredAIDrafts` | `migration_verified` 與 `providers_verified` |
+| `firestore_indexes` | 只有 `firestore:indexes`（含 `fieldOverrides`） | 無 |
 
 `notification_backend` 不設 provider gate，因為那兩支沒有任何 secret 宣告。理由與 PR #13 把 `hosting_client` 的 gate 拿掉一樣：不要求一個無法照實回答的聲明。
 
 `rtc_backend` 的 `providers_verified` 是**範圍限定**的聲明，指的是 LiveKit 已就緒，不是全部 provider 都好了。`feature_backend` 保留原本的全機隊 gate 不變。
+
+`firestore_indexes`（2026-08-17 新增）也不設 gate：它只建立索引容量，不改行為、不動 provider、不動 Rules，沒有查詢的索引是惰性的。它的用途是替**線上已經在跑**的程式碼補索引；新查詢的索引仍然要跟著它的 Function 一起出，見 [MIGRATION](MIGRATION.md)。部署成功不等於索引可用，要另外確認狀態為 `READY`，見 [TESTING](TESTING.md)。
 
 ### 2.2 補部署角色
 
