@@ -9,6 +9,7 @@ on:
         type: choice
         default: additive_backend
         options:
+          - firestore_indexes
           - additive_backend
           - notification_backend
           - push_ownership_backend
@@ -93,6 +94,18 @@ jobs:
           PRESENCE_FUNCTIONS="functions:cleanupStalePresence"
           V3_FUNCTIONS="$MEMBERSHIP_FUNCTIONS,$RTC_FUNCTIONS,$NOTIFICATION_FUNCTIONS,$PRESENCE_FUNCTIONS,functions:syncCallSignals,functions:generateGeminiReply,functions:cleanupExpiredAIDrafts,functions:cleanupExpiredUploads,functions:cleanupOrphanR2Objects,functions:finalizeUpload,functions:getAttachmentDownloadUrl,functions:requestUpload,functions:searchMessages,functions:syncMessageSearchIndex,functions:cleanupExpiredCustomStickerUploads,functions:deleteCustomSticker,functions:finalizeCustomStickerUpload,functions:getCustomStickerDownloadUrl,functions:requestCustomStickerUpload"
           case "$ROLLOUT_PHASE" in
+            firestore_indexes)
+              # Indexes for Functions that are already deployed. "Ship the index
+              # with the Function that queries it" is about never running code
+              # ahead of its index; it does not require dragging five unrelated
+              # Functions along to repair an index the running code already
+              # needs. Every other index-carrying phase redeploys Functions as
+              # well, so a missing index used to cost a Function rollout for
+              # nothing. No attestation gate: this creates index capacity, it
+              # changes no behaviour, no provider and no Rule, and an index that
+              # nothing queries is inert.
+              pnpm exec firebase deploy --project f-chat-wayde-fu --only "firestore:indexes"
+              ;;
             additive_backend)
               # cleanupStalePresence rides here rather than with rtc_backend: it
               # touches no provider, so it must not sit behind an attestation
