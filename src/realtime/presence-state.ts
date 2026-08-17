@@ -62,13 +62,30 @@ export function presenceSummary(otherOnlineCount: number, roomOpen: boolean): st
   return otherOnlineCount === 0 ? '只有你在線' : `你和其他 ${otherOnlineCount} 位在線`;
 }
 
+/**
+ * Revoked members are excluded here, not upstream, because this is the only
+ * place where membership and liveness are both in hand.
+ *
+ * Presence is global: `realtime/presence/{uid}` carries no room dimension, its
+ * owner holds the only write permission, and the heartbeat rebuilds the node
+ * within one beat of any server-side delete. Revocation therefore cannot make a
+ * user's presence go away -- nor should it, since they may still be in other
+ * rooms. What revocation changes is membership, so membership is what this
+ * projection has to honour.
+ *
+ * The Firestore subscription already drops non-active members before they get
+ * here, which is why nothing was visibly wrong. That left the guarantee resting
+ * on one filter clause in another module with no test of its own: delete it and
+ * a revoked member reappears in the list, online. Checking status here keeps the
+ * projection correct for whatever it is handed.
+ */
 export function onlineRoomMembers(
   members: RoomMembership[],
   onlineUserIds: ReadonlySet<string>,
   selfUid: string,
 ): OnlineUser[] {
   return members.flatMap((member): OnlineUser[] => (
-    member.userId !== selfUid && onlineUserIds.has(member.userId)
+    member.status === 'active' && member.userId !== selfUid && onlineUserIds.has(member.userId)
       ? [{ uid: member.userId, displayName: member.displayName || '使用者', online: true }]
       : []
   ));

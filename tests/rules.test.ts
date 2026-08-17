@@ -277,6 +277,33 @@ describe('Global presence ACL', () => {
     await assertFails(get(ref(anonymous, 'realtime/presence/alice')));
   });
 
+  /**
+   * TD-M1 proposed clearing `realtime/presence/{uid}` during revocation. These
+   * two assertions are why that cannot work and must not be attempted: the node
+   * is keyed by uid alone, and its owner keeps the only write permission whether
+   * or not they are still in the room. A server-side delete is undone by the
+   * next heartbeat, and it would blank the user in every other room meanwhile.
+   * Revocation therefore has to be enforced on membership, not on presence data.
+   */
+  it('leaves global presence writable by its owner after their room mirror is revoked', async () => {
+    await seedMirror();
+    const alice = testDatabase(environment.authenticatedContext('alice'));
+    const connection = { state: 'online', connectedAt: Date.now(), updatedAt: Date.now() };
+    await assertSucceeds(set(ref(alice, 'realtime/presence/alice/connections/tab-1'), connection));
+
+    await environment.withSecurityRulesDisabled(async (context) => {
+      await set(ref(testDatabase(context), `realtime/rooms/${ROOM_KEY}/members/alice`), null);
+    });
+
+    // Revoked from the room: the room mirror is closed to her immediately.
+    await assertFails(get(ref(alice, `realtime/rooms/${ROOM_KEY}/presence`)));
+    await assertFails(set(ref(alice, `realtime/rooms/${ROOM_KEY}/presence/alice/connections/tab-1`), {
+      displayName: 'Alice', connectedAt: Date.now(),
+    }));
+    // Global presence is untouched by that, which is the whole point.
+    await assertSucceeds(set(ref(alice, 'realtime/presence/alice/connections/tab-1'), connection));
+  });
+
   it('rejects cross-user writes and malformed connection state', async () => {
     const alice = testDatabase(environment.authenticatedContext('alice'));
     await assertFails(set(ref(alice, 'realtime/presence/bob/connections/tab-1'), {
