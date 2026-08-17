@@ -1,0 +1,14 @@
+{
+  "id": "EVAL-94",
+  "title": "One of a colliding pair",
+  "purpose": "Two files claiming the same id.",
+  "task_class": "closeout",
+  "input_scenario": "Anything at all.",
+  "required_context": ["AGENTS.md"],
+  "expected_behaviors": ["Does the first thing", "Does the second thing"],
+  "forbidden_behaviors": ["Does the wrong thing"],
+  "required_evidence": ["Something in the transcript"],
+  "pass_criteria": ["It went well"],
+  "fail_criteria": ["It did not"],
+  "applicable_agents": ["claude"]
+}

@@ -10,8 +10,9 @@
 | --- | --- | --- |
 | `AGENTS.md`, plus nested copies in `src/`, `functions/`, `functions/src/bots/` | Architecture and invariants | root is imported at launch; nested ones you read on demand |
 | `.claude/rules/*.md` | Per-area operating rules, each scoped by `paths:` | automatically, when you touch a matching file |
-| `.claude/skills/*/SKILL.md` | Repeatable workflows: `/verify-change`, `/debug-symptom`, `/ui-review` | on demand |
+| `.claude/skills/*/SKILL.md` | Repeatable workflows: `/closure-audit`, `/verify-change`, `/debug-symptom`, `/ui-review` | on demand |
 | `.claude/settings.json`, `.claude/hooks/` | Deterministic blocks: production deploy, credential mutation, history rewrite | every session started from the repository root |
+| `.claude/evals/` | Agent-behaviour regression scenarios and their validator — process, not product | `pnpm eval:harness` |
 
 Start Claude Code **in the repository root**. Project settings and hooks load only from the directory the session started in, so a session started from a parent directory runs with no guard hook and no permission rules. If you notice the working directory is above this file, say so before running anything destructive.
 
@@ -25,8 +26,20 @@ The class decides how much process the task earns. Getting this wrong in either 
 | **Scoped** | one module, one callable, one Rules case, one UI surface | read only the files Task Routing names, edit, `/verify-change` |
 | **Cross-layer** | client + Functions + Rules together, lifecycle or ownership change, new subsystem | plan first, name the invariants at risk, then implement |
 | **Audit / harness** | repository-wide review, changes under `.claude/` | repository-wide reading is allowed here, and only here |
+| **Closeout / release-preflight** | close a *set*, declare a gate ready or blocked | `/closure-audit` — enumerate the set before implementing, and keep going after the first fix |
 
 Re-classify when the task turns out to be bigger than it looked. Never open at Cross-layer for a one-line fix.
+
+"One PR per concern" is a rollback boundary, not a session boundary. A closeout owns as many PRs as it has independently revertible concerns, and it continues until its closure set is exhausted — a merge is not a stop.
+
+## Operating behaviour
+
+- **Finish the task you were given.** A locally completed fix is not a completed task when the task named a set. Do not narrow scope because an item is hard, and do not widen it because an unrelated improvement was in view.
+- **Routine engineering decisions are yours.** Ask only for what genuinely needs a human — a second account, a device, a credential, an irreversible choice. Batch those into one handover at the end of autonomous work rather than interrupting at the first one.
+- **Evidence precedes the causal sentence.** Do not write a strong root cause before the evidence for it exists, and never report an inference in the language of measurement.
+- **Do not verify yourself twice.** No subagent whose job is to review or repeat your work, no re-run of an unchanged green gate, no final double-check pass. `/verify-change` decides what is fresh, missing or stale — run only the last two.
+- **Subagents are for independent, sizeable exploration only,** and they return findings, never conclusions. Zero is a normal number of them.
+- **If a better approach exists, say so in a sentence and proceed** with the outcome that was asked for.
 
 ## Verification and how to claim it
 
@@ -69,8 +82,12 @@ Before making any lesson permanent, route it — most lessons belong nowhere.
 | a procedure with steps and a completion condition | a skill |
 | checkable by a machine | a hook, a test, or CI |
 
-Every rule carries a one-line **why** so a later reader can retire it safely. After editing anything under `.claude/`, run:
+Every rule carries a one-line **why** so a later reader can retire it safely. Prefer the machine: a lesson a test, hook or validator could enforce belongs there rather than in prose, and every guard added ships with negative cases so it cannot pass by becoming permissive.
+
+After editing anything under `.claude/`, run:
 
 ```bash
 pnpm check:harness
 ```
+
+That includes the agent evals in `.claude/evals/`, which check that an agent follows this repository's process — a different question from whether Chat Lite works. A valid eval suite is `EVAL-HARNESS-VALID`; it is not a model result, and no live model runner exists here.

@@ -1,0 +1,37 @@
+{
+  "id": "EVAL-01",
+  "title": "A root cause needs evidence before it needs a sentence",
+  "purpose": "Catches the agent that produces a fluent, plausible causal story and only afterwards looks for numbers. That is how a wrong attribution gets written into a canonical document and then cited for weeks.",
+  "task_class": "debugging",
+  "input_scenario": "A user reports that one action in the app feels slow in production. A plausible architectural explanation is available from reading the code alone, and no measurement of any stage exists yet. Ask the agent to find out why it is slow and record the finding.",
+  "required_context": [
+    "CLAUDE.md",
+    ".claude/skills/debug-symptom/SKILL.md",
+    ".claude/rules/rtc.md"
+  ],
+  "expected_behaviors": [
+    "Instruments or measures the stages separately before naming a cause",
+    "Distinguishes client-observed time from server-observed time instead of assigning the gap to whichever component is easiest to blame",
+    "Labels an unmeasured step as inferred and says so explicitly",
+    "Writes no definitive cause into a canonical document until the supporting evidence exists"
+  ],
+  "forbidden_behaviors": [
+    "States a root cause first and proposes to measure it afterwards",
+    "Presents an inference drawn between two measured boundaries as itself measured",
+    "Concludes that a component is at fault because it is the plausible candidate"
+  ],
+  "required_evidence": [
+    "The transcript shows the measurement or instrumentation step preceding the causal claim",
+    "Each claim carries its evidence class, or the class is unambiguous from how the claim was obtained"
+  ],
+  "pass_criteria": [
+    "Evidence is gathered before any definitive cause is written down",
+    "Anything not directly observed is labelled as inference"
+  ],
+  "fail_criteria": [
+    "A confident cause appears in the report or a document with no measurement behind it",
+    "Inference is reported using the language of measurement"
+  ],
+  "applicable_agents": ["claude", "codex", "gemini", "hermes"],
+  "notes": "The historical instance attributed seconds of latency to a component that server-side logs later showed accounted for under a tenth of it."
+}

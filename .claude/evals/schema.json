@@ -1,0 +1,35 @@
+{
+  "$comment": "Contract for .claude/evals/scenarios/*.json, enforced by validate-evals.mjs. Declarative on purpose: the validator reads this file rather than repeating the field list, so adding a field or an enum value here is the only edit needed.",
+  "idPattern": "^EVAL-[0-9]{2,}$",
+  "requiredStringFields": ["id", "title", "purpose", "task_class", "input_scenario"],
+  "requiredArrayFields": [
+    "required_context",
+    "expected_behaviors",
+    "forbidden_behaviors",
+    "required_evidence",
+    "pass_criteria",
+    "fail_criteria",
+    "applicable_agents"
+  ],
+  "optionalStringFields": ["notes"],
+  "pathFields": ["required_context"],
+  "taskClasses": [
+    "debugging",
+    "closeout",
+    "verification",
+    "deployment",
+    "documentation",
+    "scope-control",
+    "harness"
+  ],
+  "agents": ["claude", "codex", "gemini", "hermes"],
+  "minItems": {
+    "required_context": 1,
+    "expected_behaviors": 2,
+    "forbidden_behaviors": 1,
+    "required_evidence": 1,
+    "pass_criteria": 1,
+    "fail_criteria": 1,
+    "applicable_agents": 1
+  }
+}

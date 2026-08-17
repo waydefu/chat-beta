@@ -26,6 +26,11 @@ jobs:
           distribution: temurin
           java-version: 21
       - run: pnpm install --frozen-lockfile
+      # The agent harness validates itself, its guard hook and its eval
+      # scenarios. Until now that only ran when someone remembered to run it,
+      # which is the failure mode the checks exist to remove. It needs no
+      # emulator and no browser, so it goes first and fails in seconds.
+      - run: pnpm check:harness
       - run: pnpm lint
       - run: pnpm typecheck
       - run: pnpm test:unit --coverage

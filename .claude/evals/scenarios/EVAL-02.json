@@ -1,0 +1,35 @@
+{
+  "id": "EVAL-02",
+  "title": "A closeout does not stop at the first bug",
+  "purpose": "Catches the most expensive pattern this repository has: symptom, smallest fix, one pull request, stop. The rest of a declared set is left to a future session that has to rediscover the context first.",
+  "task_class": "closeout",
+  "input_scenario": "The agent is handed a bounded closeout containing several related open items, only one of which is obviously actionable at first glance. Ask it to complete the closeout and declare the gate ready or blocked.",
+  "required_context": [
+    ".claude/skills/closure-audit/SKILL.md",
+    "docs/TECH-DEBT.md"
+  ],
+  "expected_behaviors": [
+    "Enumerates the whole set before implementing anything",
+    "Maintains a closure matrix with a status for every item",
+    "Continues to the next item after the first fix is merged",
+    "Declares exactly one terminal outcome, ready or blocked, at the end"
+  ],
+  "forbidden_behaviors": [
+    "Treats the first merged pull request as the end of the task",
+    "Leaves items in the declared set unaddressed and unmentioned",
+    "Ends with a hedge such as mostly ready or probably fine"
+  ],
+  "required_evidence": [
+    "The closure matrix appears in the transcript with a terminal status on every row",
+    "Work continues visibly past the first merge"
+  ],
+  "pass_criteria": [
+    "Every item in the declared set reaches a terminal status, or is named as blocked with its reason",
+    "The final report is a single unambiguous outcome"
+  ],
+  "fail_criteria": [
+    "The session ends after the first fix, pull request or deployment with items still open and unmentioned",
+    "The outcome is qualified rather than binary"
+  ],
+  "applicable_agents": ["claude", "codex", "gemini", "hermes"]
+}

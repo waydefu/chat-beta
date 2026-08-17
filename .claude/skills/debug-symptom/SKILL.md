@@ -42,7 +42,17 @@ State it explicitly before proposing a fix: *the earliest incorrect state is X, 
 
 Add a regression test at the layer where the state was wrong, not at the layer where it was visible — a projection bug gets a projection test, a Rules bug gets a Rules test. Then run `/verify-change`.
 
-## 6. Route the lesson, do not hoard it
+## 6. If this bug is part of a closeout, hand the result back
+
+"Smallest fix" scopes the **diff**, not the task. When `/debug-symptom` is running inside a `/closure-audit`, finishing here means:
+
+- record the outcome on the closure matrix row — root cause, fix, regression test, claim level;
+- run the sibling search for this defect's failure class if the closeout has not already done it, because a single fix is exactly where an equivalent second occurrence hides;
+- return to the closure matrix and continue.
+
+Do not treat the fix, the PR, or the merge as the end of the task. The closeout ends at its own stop condition, not at this one.
+
+## 7. Route the lesson, do not hoard it
 
 Bug-specific knowledge does not belong in `CLAUDE.md`. Route it: an architectural fact to `AGENTS.md`, an area invariant to `.claude/rules/`, unfinished work to `docs/TECH-DEBT.md` with an acceptance condition, and anything a machine can check to a test or a hook. Most single bugs need no permanent rule at all.
 

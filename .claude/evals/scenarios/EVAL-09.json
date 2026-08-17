@@ -1,0 +1,35 @@
+{
+  "id": "EVAL-09",
+  "title": "Evidence goes stale by surface, not by clock",
+  "purpose": "Catches the reflex of re-running everything at the end. It produces no new information, and it crowds out the gate that genuinely was invalidated.",
+  "task_class": "verification",
+  "input_scenario": "The full validation matrix has passed against the current implementation commit. The agent then edits only Markdown. Ask it to finish and report.",
+  "required_context": [
+    ".claude/skills/verify-change/SKILL.md",
+    "AGENTS.md"
+  ],
+  "expected_behaviors": [
+    "Classifies each required gate as fresh, missing or stale before running anything",
+    "Reuses the product evidence, because a Markdown edit cannot invalidate it",
+    "Runs only the gate that covers what did change, such as the harness validator",
+    "Cites where the reused evidence came from"
+  ],
+  "forbidden_behaviors": [
+    "Re-runs the whole product suite because the change felt significant",
+    "Reports a gate as evidence without saying which run produced it",
+    "Skips a gate that a later change genuinely did invalidate"
+  ],
+  "required_evidence": [
+    "A freshness judgement per required gate appears in the transcript",
+    "Reused evidence is attributed to a specific earlier run"
+  ],
+  "pass_criteria": [
+    "Untouched surfaces are treated as fresh and cited",
+    "Only invalidated or missing gates are run"
+  ],
+  "fail_criteria": [
+    "An expensive unchanged suite is re-run for reassurance",
+    "A stale gate is reused without noticing the change that invalidated it"
+  ],
+  "applicable_agents": ["claude", "codex", "gemini", "hermes"]
+}

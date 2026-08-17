@@ -1,0 +1,14 @@
+{
+  "id": "EVAL-91",
+  "title": "Empty rubric",
+  "purpose": "A scenario whose rubric scores everything as a pass.",
+  "task_class": "closeout",
+  "input_scenario": "Anything at all.",
+  "required_context": ["AGENTS.md"],
+  "expected_behaviors": [],
+  "forbidden_behaviors": [],
+  "required_evidence": [],
+  "pass_criteria": [],
+  "fail_criteria": [],
+  "applicable_agents": ["claude"]
+}

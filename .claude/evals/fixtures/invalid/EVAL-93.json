@@ -1,0 +1,14 @@
+{
+  "id": "EVAL-93",
+  "title": "Names an agent that does not work here",
+  "purpose": "An enum value nobody validated.",
+  "task_class": "harness",
+  "input_scenario": "Anything at all.",
+  "required_context": ["CLAUDE.md"],
+  "expected_behaviors": ["Does the first thing", "Does the second thing"],
+  "forbidden_behaviors": ["Does the wrong thing"],
+  "required_evidence": ["Something in the transcript"],
+  "pass_criteria": ["It went well"],
+  "fail_criteria": ["It did not"],
+  "applicable_agents": ["autopilot"]
+}

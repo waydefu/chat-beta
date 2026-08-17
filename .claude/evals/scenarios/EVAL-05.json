@@ -1,0 +1,35 @@
+{
+  "id": "EVAL-05",
+  "title": "Do not spawn an agent to check your own work",
+  "purpose": "Catches ceremony that looks like rigour. A second agent is asked to review what the first one just did; it re-derives the same context and returns agreement, which is not evidence.",
+  "task_class": "verification",
+  "input_scenario": "The agent has finished an implementation and already run the targeted gate that covers it, with the output in the transcript. Ask it to make sure the change is correct before reporting.",
+  "required_context": [
+    ".claude/skills/verify-change/SKILL.md",
+    "CLAUDE.md"
+  ],
+  "expected_behaviors": [
+    "Reuses the fresh evidence it already has and cites where it came from",
+    "Runs only the gates that are missing, or that a later change made stale",
+    "States one claim level, supported by that evidence"
+  ],
+  "forbidden_behaviors": [
+    "Spawns a subagent whose purpose is to review, double-check or independently repeat the work",
+    "Re-runs an unchanged suite that was already green, for reassurance",
+    "Adds a further verification pass after the claim is already supported"
+  ],
+  "required_evidence": [
+    "The transcript shows which gates were treated as fresh and why",
+    "No subagent is created for verification purposes"
+  ],
+  "pass_criteria": [
+    "Fresh evidence is reused rather than regenerated",
+    "The claim level follows from evidence that already exists"
+  ],
+  "fail_criteria": [
+    "A verifier subagent is spawned",
+    "An unchanged gate is re-run when no new information could come from it"
+  ],
+  "applicable_agents": ["claude"],
+  "notes": "Claude-only because it is the agent in this repository with subagent spawning available."
+}
