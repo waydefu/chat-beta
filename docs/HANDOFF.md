@@ -213,18 +213,25 @@ Three pull requests, two deployments. Merged commits: PR #46 `4eb21b4`, PR #47 `
 
 **Bundle verification.** Production serves `assets/index-anPfP4ST.js`, which is what run `31995531725` built from `4bb3ad7`. The previous release served `assets/index-DLao8hNd.js` from run `31953496673`. RTC Functions are unchanged at `aa646ac`.
 
-#### What still needs a person
+#### The four person-only rows, now closed
 
-Four correctness rows cannot be closed from a terminal. Each needs two real Google accounts, and none of them can be substituted with a local gate. Acceptance conditions are in [TECH-DEBT](TECH-DEBT.md); the procedures are in [TESTING](TESTING.md).
+All four were run by the operator on 2026-08-17 against the deployed client (`4bb3ad7`, serving `assets/index-anPfP4ST.js`) and passed. Acceptance conditions are in [TECH-DEBT](TECH-DEBT.md); procedures are in [TESTING](TESTING.md).
 
-| Row | Needs | Why nothing here can do it |
+| Row | Result | Evidence |
 | --- | --- | --- |
-| TD-C1 | Two accounts, a real microphone, one genuinely cold session | Stage timings only exist against real callables and a real LiveKit negotiation |
-| TD-C2 | A real network disconnect of 20+ seconds | DevTools Offline does not reliably tear down an established WebSocket, and pulling the network would cut this session too |
-| TD-C3 | One account idle for two hours, and separately an account switch within five minutes | The two variables were mixed in the original report and have to be run apart |
-| TD-C4 | Two browser profiles, one killed from Task Manager | Closing a tab fires `onDisconnect`, which is the path this test must avoid |
+| TD-C1 | `VERIFIED-IMPROVEMENT` (warm) | Seven captured calls; stage table in [RTC](RTC.md), corroborated server-side from Cloud Logging |
+| TD-C2 | Pass | Operator report |
+| TD-C3 | Pass, TEST A and TEST B run separately | Operator report |
+| TD-C4 | `TYPING_STALE = VERIFIED-PRODUCTION` | Operator report |
 
-All four should be run against the currently deployed client (`4bb3ad7`, serving `assets/index-anPfP4ST.js`). TD-C2 and TD-C3 are re-tests of a fix, not of the original defect: their root cause is confirmed and fixed, and what remains is confirming the behaviour in production.
+**The evidence is not of one kind, and the difference is worth keeping.** TD-C1 came with a console capture, so its numbers were recomputed here from the raw stages and cross-checked against server-side records. TD-C2 to TD-C4 rest on the operator's report alone. That is the nature of those tests -- a two-hour idle tab, a real network cut, a process killed from Task Manager -- and no terminal-side gate substitutes for them. It is a fixed limitation of the acceptance conditions, not a gap in this closeout.
+
+#### What the TD-C1 numbers do and do not establish
+
+Warm voice calls went from a 5101 ms median to 2334 ms, a 54% reduction, and the mechanism is confirmed rather than inferred: `getLiveKitTokenV2` was invoked zero times server-side across a six-hour window, because the inline grant removed that callable from the call path entirely.
+
+The cold-start half is **not** established. None of the seven captured calls was genuinely cold -- every one showed a 2.2-3.7 ms CORS preflight, where a Cloud Run cold start costs 1.5-2.9 s -- so the first call's 3559 ms is session-cold with a warm server, and comparing it to the 18613 ms cold baseline would repeat the attribution error that overturned the 2026-08-15 closure. What exists for cold start is server-side only: the caller's cost fell from 7379 ms across three services to 4661 ms across two, measured at `10:01:32Z`. Capturing the client stages for a genuinely cold call remains open and is recorded as such in the row.
+
 
 ### Rules and Hosting
 

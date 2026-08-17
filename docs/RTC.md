@@ -131,29 +131,91 @@ V2 名稱是 rollout boundary：production舊三支 `startLiveKitCall`／`getLiv
 2. **App Check session warm-up。** `beginSession()` 一登入就以 dynamic import 起始 App Check，不再等第一支 callable 才觸發。原本第一個用到 Firebase 的功能要獨自付掉 reCAPTCHA Enterprise 腳本載入與 provider handshake，冷 session 通常就是通話鍵。enforcement 與 limited-use token 語意**完全未動**：`enforceAppCheck` / `consumeAppCheckToken` 仍掛在全部六支 RTC callable 上，client 仍每次送 `limitedUseAppCheckTokens: true`。warm-up 失敗只 swallow，不影響其他 UI。
 3. **本地媒體與 LiveKit 協商平行化。** `createLocalTracks()` 與 `room.connect()` 同時進行，連上後才 `publishTrack`。`mediaReady` 標記在**發佈後**而非取得後，所以階段語意仍是「本地媒體已在通話中」，平行化的效果會表現為這個階段變短，而不是階段位移。取消時 `releaseCapture()` 不 await pending 的授權提示，但提示一旦結算就把 track `stop()` 掉，避免麥克風被留著。語音通話的 `video: false`，不會開相機。
 
-### AFTER 量測（尚未取得）
+### AFTER 量測（2026-08-17，production，client `4bb3ad7`／RTC Functions `aa646ac`）
 
-**狀態：`PENDING-PRODUCTION-MEASUREMENT`。**
+**狀態：`VERIFIED-IMPROVEMENT`（暖機）。**
 
-上述三項已於 2026-08-16 部署到 production（backend run `31953276095`、hosting run `31953496673`，皆為 `aa646ac`），但**尚未取得任何一組部署後的分段數字**。
+七通實測，同一 client、同一房間、真實 LiveKit 與已部署 callable，全部落在 `10:02:35Z–10:03:55Z`：1 通 session 冷啟語音、5 通暖機語音、1 通視訊。視訊那通以「結束時解除發布兩條 track」辨識（`TR_AM…` 音訊 ＋ `TR_VC…` 視訊），其餘六通各只有一條音訊 track。
 
-2026-08-17 覆核了「還在不在」這件事，因為量測只有對照到正確的 build 才有意義：RTC Functions 仍是 `aa646ac` 的那一版（`gcloud functions list` 的 update time 為 2026-08-16T14:41Z），client 已前進到 `4bb3ad7`（hosting run `31995531725`，production 目前提供 `assets/index-anPfP4ST.js`）。`4bb3ad7` 只改 presence heartbeat 的節點擁有權，不在通話路徑上，因此 BEFORE 對照仍然成立。`src/calls/call-timing.ts` 的階段與開關也未變更。
+擷取紀錄裡的 LiveKit chunk 為 `rtc-livekit-D-IL3D_C.js`，與本 repo 現行原始碼建置出的檔名一致，因此受測的 LiveKit client 就是版本庫裡的這一版。應用程式自身的 chunk 雜湊在本機與 production 不同，那是 production build 會把環境設定編進去所致，與受測版本無關。
 
-取得方式與 BEFORE 相同：
+#### 暖機語音（5 通，對照 BEFORE 暖機中位數）
 
-```text
-localStorage['chat-lite:call-timing'] = '1'
-```
+| 階段 | BEFORE 中位數 | AFTER min | AFTER 中位數 | AFTER max | 中位數差 |
+|---|---|---|---|---|---|
+| uiClicked → uiAcknowledged | 0 ms | 1 ms | **1 ms** | 1 ms | +1 ms |
+| → modulesReady | 11 ms | 34 ms | **37 ms** | 91 ms | **+26 ms（唯一變慢的階段）** |
+| → callCreated | 864 ms | 635 ms | **661 ms** | 793 ms | −203 ms（−23%） |
+| → tokenReceived | 724 ms | 19 ms | **26 ms** | 48 ms | −698 ms（−96%） |
+| → sdkReady | 0 ms | 0 ms | **0 ms** | 0 ms | 0 |
+| → providerConnected | 1701 ms | 605 ms | **895 ms** | 979 ms | −806 ms（−47%） |
+| → mediaReady | 1177 ms | 134 ms | **156 ms** | 288 ms | −1021 ms（−87%） |
+| → serverConfirmed | 646 ms | 516 ms | **538 ms** | 728 ms | −108 ms（−17%） |
+| **總計** | **5101 ms** | **2016 ms** | **2334 ms** | **2964 ms** | **−2767 ms（−54%）** |
 
-重載後用兩個真實帳號、真實音訊裝置量測，最少 5 通暖機語音、1 通真正冷啟動語音、1 通視訊，逐階段記錄並與 BEFORE 表對照。
+兩個必須寫明的讀表規則，否則之後會有人以為資料壞掉：
 
-在拿到這組數字之前，下列都是**假設，不是結論**：
+- **總計欄是五通各自 `connected in` 的中位數，不是上面各階段中位數相加**（相加為 2314 ms）。中位數不可加總，差 20 ms 是正常的。
+- **每通的階段和都比它自己的 `connected in` 少 21–36 ms**，七通一致。那是 `serverConfirmed` 之後到印出該行之間的收尾，不是遺漏的階段。
 
-- 假設 1：inline grant 之後，`tokenReceived` 階段趨近 0 ms 或整段離開 critical path。
-- 假設 2：App Check session warm-up 縮短 session 內第一通的瀏覽器端成本。
-- 假設 3：媒體與協商平行化縮短 `providerConnected → mediaReady`。
+#### 另外兩通
 
-**在量到之前不得寫「延遲已修好」。** 沒有數字的就不是 latency fix —— 這條規則對 #43 和對 #42 一視同仁。
+| 階段 | session 冷啟語音 | 視訊 |
+|---|---|---|
+| → modulesReady | 84 ms | 25 ms |
+| → callCreated | 948 ms | 614 ms |
+| → tokenReceived | 30 ms | 18 ms |
+| → sdkReady | 0 ms | 0 ms |
+| → providerConnected | 1133 ms | 773 ms |
+| → mediaReady | 502 ms | **1107 ms** |
+| → serverConfirmed | 828 ms | 649 ms |
+| **總計** | **3559 ms** | **3211 ms** |
+
+視訊的 `mediaReady` 是暖機語音中位數的 7 倍（1107 ms vs 156 ms），符合「這一通真的要開相機」。這也反向確認 `mediaReady` 仍在量真正的媒體工作，平行化沒有把該階段變成空殼。
+
+#### 三項假設的判定
+
+| 假設 | 判定 | 依據 |
+|---|---|---|
+| 1. inline grant 讓 `tokenReceived` 趨近 0 或離開 critical path | **CONFIRMED（結構性）** | 不只是 724 → 26 ms：`getLiveKitTokenV2` 在 2026-08-17 的六小時窗內 **server 端零次呼叫**。該段不是變快，是整支 callable 已不在通話路徑上 |
+| 2. App Check session warm-up 縮短 session 內第一通的瀏覽器端成本 | **INCONCLUSIVE（無法單獨歸因）** | session 冷啟那通的 `callCreated` 為 948 ms，比暖機中位數多 287 ms，仍存在「第一通溢價」。要單獨歸因需要一組 BEFORE 的 session 冷／server 暖對照，該組不存在。總體改善成立，但不得單獨記在這一項名下 |
+| 3. 媒體與協商平行化縮短 `providerConnected → mediaReady` | **CONFIRMED** | `mediaReady` 1177 → 156 ms（−87%）。BEFORE 該階段冷暖幾乎相同（1169／1177 ms），是裝置初始化特徵；現在暖機 134–288 ms，而視訊仍要 1107 ms |
+
+#### server 端對照（同一批請求）
+
+暖機七通的 server 端成本仍然極小：`OPTIONS` 2.2–3.7 ms、`POST` 66–138 ms。以中位數計，兩支 callable 合計約 159 ms，占 client 觀測 2334 ms 的 **7%**。
+
+把範圍限定在三支（現為兩支）callable 上更清楚：
+
+| | BEFORE 暖機 | AFTER 暖機 |
+|---|---|---|
+| callable 的 client 觀測合計 | 2234 ms | 1225 ms |
+| 其中 server 端 | 212 ms | 約 159 ms |
+| **瀏覽器端差額** | **2022 ms（91%）** | **1066 ms（87%）** |
+
+瀏覽器端成本掉了 956 ms（−47%）。這正是「少付一次 limited-use App Check token ＋ 少一次 round trip」的量級，與假設 1 相符。
+
+#### 冷啟動：只有 server 端證據，client 分段未取得
+
+**這一批七通沒有一通是真正的冷啟動。** 判別法不需要對時間戳：Cloud Run 冷啟光是 `OPTIONS` preflight 就要 1.5–2.9 秒，任何一通只要 server 是冷的，`callCreated` 必然 ≥2000 ms；而七通的 `callCreated` 全部落在 614–948 ms，對應的 server 端 `OPTIONS` 是 2.2–3.7 ms。第一通 3559 ms 是 **session 冷、server 暖**。
+
+**因此不得拿 3559 ms 去對照 BEFORE 的 18613 ms。** 那組 18613 ms 內含 7379 ms 的 Cloud Run 冷啟；兩者不是同類比較，寫成「冷啟動快 81%」會重複 2026-08-15 那次被推翻的歸因錯誤。
+
+同日確實發生過兩次真冷啟，但只有 server 端紀錄，沒有對應的 client 分段：
+
+| 時間 | `startLiveKitCallV2` | `confirmLiveKitCall` | `respondLiveKitCall`（callee 側） |
+|---|---|---|---|
+| `09:39:55Z` | OPTIONS 1935 ms ＋ POST 427 ms | OPTIONS 2862 ms ＋ POST 428 ms | OPTIONS 1842 ms ＋ POST 373 ms |
+| `10:01:32Z` | OPTIONS 1539 ms ＋ POST 458 ms | OPTIONS 2245 ms ＋ POST 419 ms | OPTIONS 2248 ms ＋ POST 368 ms |
+
+以 `10:01:32Z` 這組計，**呼叫方**的 server 端冷啟成本為 `1539+458+2245+419 = 4661 ms`，對照 BEFORE 的 7379 ms（三支各自獨立冷啟），少了 **2718 ms（−37%）**。少掉的量級正好是 `getLiveKitTokenV2` 那一支的獨立冷啟（BEFORE 為 2478 ms）——與「該支已不在路徑上」是同一件事的兩種量法。`respondLiveKitCall` 是 callee 付的成本，不計入呼叫方路徑。
+
+**尚未取得的是真冷啟動的 client 分段**，因此 BEFORE 冷啟動欄仍無 AFTER 對照。要補取：確認 RTC callable 已閒置到 Cloud Run 縮到零（無流量約 15 分鐘以上），再打一通語音並記錄 console 分段。在補到之前，冷啟動只能引用上表的 server 端數字，**不得宣稱 client 端冷啟動改善幅度**。
+
+#### 仍然成立的約束
+
+不得為了帳面數字把 `serverConfirmed` 移出使用者可見的連線判定 —— server-authoritative call state 是 invariant，不是 latency budget。這一條不因本次結案而改變。
+
 
 ## Staging smoke gate
 
