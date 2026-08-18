@@ -1,3 +1,6 @@
+/* Inline icons. 1em keeps each icon tied to the font-size its button already
+   sets, which is how the Unicode glyphs they replaced were scaled. */
+.ico{width:1em;height:1em;display:block;flex:0 0 auto}
 /* Individual components, their states, keyframes. */
 :root[data-theme="dark"]{--surface:#121a2c;--surface-2:#19243a;--text:#f0f4ff;--muted:#9eabc2;--line:#293650;--blue-soft:#1d2e5b;--shadow:0 24px 80px #0007;background:#09101e;color-scheme:dark}
 [hidden]{display:none!important}
