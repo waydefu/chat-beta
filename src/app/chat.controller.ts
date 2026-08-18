@@ -36,7 +36,6 @@ import { renderAiSources } from '../bots/grounding.view';
 import type {
   CallMessage,
   ChatMessage,
-  Mention,
   OnlineUser,
   Reaction,
   RoomCall,
@@ -46,6 +45,14 @@ import type {
 } from '../types';
 import { compareMessages, formatMessageTime, initialOf, truncate } from '../utils';
 import { RoomScope, SessionScope } from './lifecycle';
+import {
+  actionButton,
+  appendMentionText,
+  firstVisibleMessage,
+  pinToEnd,
+  reactionSignatures,
+  textOf,
+} from './message-view';
 import { applyTheme, preferredTheme, storeTheme, watchSystemTheme, type Theme } from './theme';
 
 const REACTION_CHOICES = ['👍', '❤️', '😂'];
@@ -499,30 +506,6 @@ function renderConnectionStatus(): void {
   ui.connection.replaceChildren(dot, document.createTextNode(view.label));
 }
 
-function textOf(message: ChatMessage): string {
-  if (message.kind === 'text') return message.text;
-  if (message.kind === 'system') return message.text || message.event;
-  if (message.kind === 'sticker') return '貼圖';
-  if (message.kind === 'call') return message.event === 'started' ? '開始了一通電話' : '通話已結束';
-  return message.text || '附件';
-}
-
-function appendMentionText(target: HTMLElement, text: string, mentions: Mention[] = []): void {
-  let cursor = 0;
-  for (const mention of [...mentions].sort((a, b) => a.start - b.start)) {
-    if (mention.start < cursor || mention.end > text.length) continue;
-    target.append(document.createTextNode(text.slice(cursor, mention.start)));
-    const tag = document.createElement('span');
-    tag.className = 'mention';
-    tag.textContent = text.slice(mention.start, mention.end);
-    tag.dataset.mentionType = mention.type;
-    tag.dataset.mentionId = mention.id;
-    target.append(tag);
-    cursor = mention.end;
-  }
-  target.append(document.createTextNode(text.slice(cursor)));
-}
-
 function messageReadCount(messageId: string): number {
   const index = messagePositions.get(messageId) ?? -1;
   if (index < 0) return 0;
@@ -542,16 +525,6 @@ interface MessageRenderOptions {
 
 function refreshMessagePositions(ordered: readonly ChatMessage[]): void {
   messagePositions = new Map(ordered.map((message, index) => [message.id, index]));
-}
-
-function firstVisibleMessage(list: HTMLElement): { row: HTMLElement; offset: number } | null {
-  const listTop = list.getBoundingClientRect().top;
-  for (const row of list.querySelectorAll<HTMLElement>('.message-row[data-message-id]')) {
-    if (row.isConnected && row.getBoundingClientRect().bottom >= listTop) {
-      return { row, offset: row.getBoundingClientRect().top - listTop };
-    }
-  }
-  return null;
 }
 
 function placeMessageRow(row: HTMLElement, messageId: string, ordered: readonly ChatMessage[]): void {
@@ -632,11 +605,6 @@ function renderCallMessages(): void {
  * the list's height once the first measurement is already spent. Re-assert on
  * the next frame so those cases do not leave the view short of the end.
  */
-function pinToEnd(list: HTMLElement): void {
-  list.scrollTop = list.scrollHeight;
-  window.requestAnimationFrame(() => { list.scrollTop = list.scrollHeight; });
-}
-
 function renderMessage(message: ChatMessage): HTMLElement {
   const own = user?.uid === message.senderId;
   const row = document.createElement('article');
@@ -752,15 +720,6 @@ function renderMessageActions(message: ChatMessage, own: boolean): HTMLElement {
   return actions;
 }
 
-function actionButton(label: string, action: () => void, danger = false): HTMLButtonElement {
-  const button = document.createElement('button');
-  button.type = 'button';
-  button.textContent = label;
-  if (danger) button.className = 'danger';
-  button.addEventListener('click', action);
-  return button;
-}
-
 function renderReactionBar(message: ChatMessage): HTMLElement {
   const bar = document.createElement('div');
   bar.className = 'reaction-bar';
@@ -796,16 +755,6 @@ function watchVisibleReactions(): void {
       .filter((messageId) => priorSignatures.get(messageId) !== nextSignatures.get(messageId)));
     updateReactionBars(changed);
   }, (error) => toast(errorText(error), 'error'));
-}
-
-function reactionSignatures(value: readonly Reaction[]): Map<string, string> {
-  const grouped = new Map<string, string[]>();
-  for (const reaction of value) {
-    const bucket = grouped.get(reaction.messageId) ?? [];
-    bucket.push(`${reaction.userId}:${reaction.emoji}`);
-    grouped.set(reaction.messageId, bucket);
-  }
-  return new Map([...grouped].map(([messageId, entries]) => [messageId, entries.sort().join('|')]));
 }
 
 function updateReactionBars(messageIds: Iterable<string>): void {
