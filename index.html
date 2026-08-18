@@ -30,14 +30,14 @@
         <div class="brand-row">
           <img src="./image/logo-v2.png" alt="" width="42" height="42" />
           <div><strong>Chat Lite</strong><span>即時聊天室</span></div>
-          <button id="close-sidebar-btn" class="icon-btn mobile-only" type="button" aria-label="關閉聊天室列表">×</button>
+          <button id="close-sidebar-btn" class="icon-btn mobile-only" type="button" aria-label="關閉聊天室列表"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6l12 12M18 6L6 18"/></g></svg></button>
         </div>
 
         <div class="room-create">
           <label for="room-name">建立或加入聊天室</label>
           <div class="inline-form">
             <input id="room-name" maxlength="50" autocomplete="off" placeholder="例如：週末計畫" />
-            <button id="join-room-btn" class="square-btn" type="button" aria-label="建立或加入聊天室">＋</button>
+            <button id="join-room-btn" class="square-btn" type="button" aria-label="建立或加入聊天室"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></g></svg></button>
           </div>
           <p id="room-error" class="field-error" role="alert"></p>
         </div>
@@ -59,16 +59,16 @@
 
       <section class="conversation" aria-label="聊天室內容">
         <header class="chat-header">
-          <button id="open-sidebar-btn" class="icon-btn mobile-only" type="button" aria-label="開啟聊天室列表" aria-controls="room-sidebar" aria-expanded="false">☰</button>
+          <button id="open-sidebar-btn" class="icon-btn mobile-only" type="button" aria-label="開啟聊天室列表" aria-controls="room-sidebar" aria-expanded="false"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M4 12h16M4 17h16"/></g></svg></button>
           <div class="chat-heading">
             <h1 id="current-room-title">選擇聊天室</h1>
             <p id="connection-status"><span class="status-dot"></span>準備連線</p>
           </div>
           <div class="header-actions">
-            <button id="voice-call-btn" class="icon-btn" type="button" aria-label="開始語音通話" disabled>☎</button>
-            <button id="video-call-btn" class="icon-btn" type="button" aria-label="開始視訊通話" disabled>▣</button>
-            <button id="search-toggle-btn" class="icon-btn" type="button" aria-label="搜尋已載入訊息" aria-controls="search-bar" aria-expanded="false">⌕</button>
-            <button id="members-toggle-btn" class="icon-btn" type="button" aria-label="顯示在線使用者" aria-controls="presence-panel" aria-expanded="false">◎</button>
+            <button id="voice-call-btn" class="icon-btn" type="button" aria-label="開始語音通話" disabled><svg class="ico" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6.5 3.5h3l1.5 4-2 1.5a12 12 0 006 6l1.5-2 4 1.5v3a2 2 0 01-2.2 2A17 17 0 014.5 5.7 2 2 0 016.5 3.5z"/></g></svg></button>
+            <button id="video-call-btn" class="icon-btn" type="button" aria-label="開始視訊通話" disabled><svg class="ico" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="6.5" width="12" height="11" rx="2.5"/><path d="M15.5 10.5l5-2.5v8l-5-2.5z"/></g></svg></button>
+            <button id="search-toggle-btn" class="icon-btn" type="button" aria-label="搜尋已載入訊息" aria-controls="search-bar" aria-expanded="false"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="6"/><path d="M15.5 15.5L20 20"/></g></svg></button>
+            <button id="members-toggle-btn" class="icon-btn" type="button" aria-label="顯示在線使用者" aria-controls="presence-panel" aria-expanded="false"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="7.5"/><circle cx="12" cy="12" r="2.5" fill="currentColor" stroke="none"/></g></svg></button>
           </div>
         </header>
 
@@ -85,7 +85,7 @@
         </div>
 
         <div id="empty-state" class="empty-state">
-          <span aria-hidden="true">✦</span>
+          <span aria-hidden="true"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="currentColor" d="M12 2.5l2.1 6.2 6.4 1.1-4.6 4.2 1.2 6.5-5.1-3.1-5.1 3.1 1.2-6.5L3.5 9.8l6.4-1.1z"/></svg></span>
           <h2>選一個聊天室開始對話</h2>
           <p>也可以從左側建立新的聊天室。</p>
         </div>
@@ -99,11 +99,11 @@
           <p id="typing-indicator" class="typing-indicator" aria-live="polite"></p>
           <div id="reply-banner" class="reply-banner" hidden>
             <div><span>回覆</span><strong id="reply-summary"></strong></div>
-            <button id="cancel-reply-btn" class="icon-btn" type="button" aria-label="取消回覆">×</button>
+            <button id="cancel-reply-btn" class="icon-btn" type="button" aria-label="取消回覆"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6l12 12M18 6L6 18"/></g></svg></button>
           </div>
           <div id="edit-banner" class="reply-banner edit-banner" hidden>
             <div><span>正在編輯</span><strong>更新後不會改變原始時間</strong></div>
-            <button id="cancel-edit-btn" class="icon-btn" type="button" aria-label="取消編輯">×</button>
+            <button id="cancel-edit-btn" class="icon-btn" type="button" aria-label="取消編輯"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6l12 12M18 6L6 18"/></g></svg></button>
           </div>
           <div id="mention-list" class="mention-list" role="listbox" aria-label="提及建議" hidden></div>
           <div id="sticker-picker" class="sticker-picker" aria-label="貼圖" hidden>
@@ -113,7 +113,7 @@
             <button type="button" data-sticker="party" aria-label="慶祝">🎉</button>
             <button type="button" data-sticker="thumbs-up" aria-label="讚">👍</button>
             <button type="button" data-sticker="coffee" aria-label="咖啡">☕</button>
-            <button id="custom-sticker-btn" type="button" aria-label="上傳自訂貼圖">＋</button>
+            <button id="custom-sticker-btn" type="button" aria-label="上傳自訂貼圖"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></g></svg></button>
             <input id="custom-sticker-input" type="file" accept="image/png,image/jpeg,image/webp" hidden />
           </div>
           <div id="voice-controls" class="voice-controls" role="group" aria-label="語音錄製控制" hidden>
@@ -123,25 +123,25 @@
             <button id="voice-finish-btn" class="primary-btn" type="button">完成</button>
           </div>
           <div class="composer">
-            <button id="attach-btn" class="icon-btn composer-tool" type="button" aria-label="附加檔案" disabled>＋</button>
+            <button id="attach-btn" class="icon-btn composer-tool" type="button" aria-label="附加檔案" disabled><svg class="ico" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></g></svg></button>
             <input id="attachment-input" type="file" hidden />
-            <button id="voice-message-btn" class="icon-btn composer-tool" type="button" aria-label="錄製語音訊息" disabled>●</button>
-            <button id="sticker-btn" class="icon-btn composer-tool" type="button" aria-label="傳送貼圖" disabled>☺</button>
+            <button id="voice-message-btn" class="icon-btn composer-tool" type="button" aria-label="錄製語音訊息" disabled><svg class="ico" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="6" fill="currentColor"/></svg></button>
+            <button id="sticker-btn" class="icon-btn composer-tool" type="button" aria-label="傳送貼圖" disabled><svg class="ico" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><path d="M9 10.5h.01M15 10.5h.01"/><path d="M8.5 14.5a4.5 4.5 0 007 0"/></g></svg></button>
             <label class="sr-only" for="message-input">輸入訊息</label>
             <textarea id="message-input" maxlength="1000" rows="1" placeholder="先選擇聊天室…" disabled role="combobox" aria-autocomplete="list" aria-controls="mention-list" aria-expanded="false"></textarea>
-            <button id="send-btn" class="send-btn" type="button" disabled aria-label="送出訊息">➤</button>
+            <button id="send-btn" class="send-btn" type="button" disabled aria-label="送出訊息"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="currentColor" d="M4 12L20 4l-4.5 8L20 20z"/></svg></button>
           </div>
           <div class="composer-meta"><span id="upload-status">Enter 送出 · Shift + Enter 換行</span><button id="upload-cancel-btn" class="text-btn" type="button" hidden>取消上傳</button><span id="message-counter">0 / 1000</span></div>
         </div>
       </section>
 
       <aside id="presence-panel" class="presence-panel" aria-label="在線使用者">
-        <div class="panel-heading"><div><strong>在線使用者</strong><span id="presence-count">0 位在線</span></div><button id="close-members-btn" class="icon-btn" type="button" aria-label="關閉在線使用者">×</button></div>
+        <div class="panel-heading"><div><strong>在線使用者</strong><span id="presence-count">0 位在線</span></div><button id="close-members-btn" class="icon-btn" type="button" aria-label="關閉在線使用者"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6l12 12M18 6L6 18"/></g></svg></button></div>
         <div id="presence-list" class="presence-list"></div>
         <div class="account-card">
           <div id="account-avatar" class="account-avatar"></div>
           <div><strong id="account-name"></strong><span id="account-email"></span></div>
-          <button id="logout-btn" class="icon-btn" type="button" aria-label="登出">↪</button>
+          <button id="logout-btn" class="icon-btn" type="button" aria-label="登出"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 4.5H6.5a2 2 0 00-2 2v11a2 2 0 002 2H14"/><path d="M13.5 12H20M17 8.5l3.5 3.5-3.5 3.5"/></g></svg></button>
         </div>
       </aside>
 
