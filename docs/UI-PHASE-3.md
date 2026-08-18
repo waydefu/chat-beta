@@ -29,7 +29,7 @@
 |---|---|---|
 | TD-U1：`chat.controller.ts` 1470 行 | **1496 行** | 已再增長，債務仍在擴大 |
 | TD-U1：拆為 4 個模組 | 檔案含 **10 個職責群集** | **覆蓋不足**，見第 2 節 |
-| TD-U3：`#chat-heads` 68 行 CSS | style.css 中**僅 4 行** | 數字錯誤 |
+| TD-U3：`#chat-heads` 68 行 CSS | **297–364 行整，正好 68 行** | **記載正確** |
 | TD-U3：`#chat-heads` 為死碼 | **`index.html:148` 有實際 DOM** | **並非死碼**，見第 4 節 |
 | TD-U3：`ring-pulse` 為共用不可刪 | **確有 4 條規則使用**（336／440／525／546） | 警告正確，必須遵守 |
 | TD-U4：圖示 13 種 | **18 種、23 處** | 數字偏低 |
@@ -140,10 +140,10 @@ utilities.css  少量共用修飾
 
 | 項目 | 登記 | 實況 | 處置 |
 |---|---|---|---|
-| `#chat-heads` | 68 行 CSS、死碼 | style.css **4 行**；`index.html:148` 有 DOM（`hidden` 空 div） | **2026-08-19 專案擁有者裁定：功能已放棄。** CSS 與 `index.html:148` 的 DOM **一併移除**——只刪 CSS 會留下無樣式的活元素 |
+| `#chat-heads` | 68 行 CSS、死碼 | **68 行正確**（`src/style.css` 297–364，含 `.chat-heads`／`.chat-head`／`-face`／`-badge`／`-name`／`-more` 與 `@keyframes chat-head-pop`）；但 `index.html:148` 有 DOM（`hidden` 空 div），故**非死碼** | **2026-08-19 專案擁有者裁定：功能已放棄。** 297–364 行與 `index.html:148` 的 DOM **一併移除**——只刪 CSS 會留下無樣式的活元素 |
 | `.typing-chip`／`.typing-dots`／`.typing-label` | 死碼 | 零引用，確認為死碼 | 可刪 |
 | `background.jpg`／`logo.png` | 未使用 | 零引用，確認 | 可刪 |
-| `@keyframes ring-pulse` | 共用，不可刪 | **4 條規則使用**（336／440／525／546） | 遵守，不可刪 |
+| `@keyframes ring-pulse` | 共用，不可刪 | **4 條規則使用**（336／440／525／546），其中 **336 就在本次要刪的區塊內**（`.chat-head-badge::after`） | 遵守，不可刪。刪除後仍有 440／525／546 三處使用 |
 
 `#chat-heads` 的 DOM 是 `role="group" aria-label="未讀訊息懸浮氣泡"` 的空容器且帶 `hidden`。
 它是「功能未啟用」還是「功能已放棄」，登記簿沒有記載，**動工前需要一個決定**。
