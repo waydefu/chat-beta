@@ -140,7 +140,7 @@ utilities.css  少量共用修飾
 
 | 項目 | 登記 | 實況 | 處置 |
 |---|---|---|---|
-| `#chat-heads` | 68 行 CSS、死碼 | style.css **4 行**；`index.html:148` 有 DOM（`hidden` 空 div） | **不可只刪 CSS**。需先確認該功能是否放棄；若放棄則 CSS 與 DOM 一併移除 |
+| `#chat-heads` | 68 行 CSS、死碼 | style.css **4 行**；`index.html:148` 有 DOM（`hidden` 空 div） | **2026-08-19 專案擁有者裁定：功能已放棄。** CSS 與 `index.html:148` 的 DOM **一併移除**——只刪 CSS 會留下無樣式的活元素 |
 | `.typing-chip`／`.typing-dots`／`.typing-label` | 死碼 | 零引用，確認為死碼 | 可刪 |
 | `background.jpg`／`logo.png` | 未使用 | 零引用，確認 | 可刪 |
 | `@keyframes ring-pulse` | 共用，不可刪 | **4 條規則使用**（336／440／525／546） | 遵守，不可刪 |
