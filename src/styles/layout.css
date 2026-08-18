@@ -1,0 +1,108 @@
+/* Page skeleton: shell, panels, regions. */
+.auth-card{width:min(460px,100%);padding:46px;border:1px solid #ffffff26;border-radius:30px;background:#ffffffee;box-shadow:0 24px 80px #0006;text-align:center;color:#14213d;backdrop-filter:blur(18px)}
+.app-shell{height:100dvh;display:grid;grid-template-columns:284px minmax(0,1fr) 280px;background:var(--surface)}
+.brand-row img{border-radius:50%}
+.brand-row div{display:grid;gap:2px}
+.room-create label,.room-list-heading{font-size:.72rem;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
+.inline-form input,.search-bar input{min-width:0;width:100%;border:1px solid var(--line);border-radius:12px;padding:11px 12px;background:var(--surface-2);color:var(--text);outline:none}
+.inline-form input:focus,.search-bar input:focus{border-color:var(--blue);box-shadow:0 0 0 3px #315ee722}
+.chat-header{height:74px;flex:0 0 auto;display:flex;align-items:center;gap:12px;padding:0 22px;border-bottom:1px solid var(--line);background:var(--surface)}
+.message-list{flex:1;overflow:auto;padding:18px 24px 26px}
+.composer-shell{flex:0 0 auto;padding:6px 20px 14px;border-top:1px solid var(--line);background:var(--surface)}
+.composer textarea{width:100%;min-height:48px;max-height:150px;resize:none;border:1px solid var(--line);border-radius:17px;padding:13px 15px;background:var(--surface-2);color:var(--text);outline:none;line-height:1.45}
+.panel-heading div{display:grid;gap:3px}
+.dialog-actions{display:flex;justify-content:flex-end;gap:8px}
+.auth-view{min-height:100svh;display:grid;place-items:center;padding:24px;background:radial-gradient(circle at 15% 20%,#5279f24d 0,transparent 30%),
+    radial-gradient(circle at 84% 80%,#2ab89a30 0,transparent 28%),
+    linear-gradient(135deg,#0610278c,#0b1b3ab3),
+    url('/image/chat-background.webp') center/cover;position:relative;isolation:isolate;overflow:hidden}
+.auth-view::before,.auth-view::after{content:"";position:absolute;z-index:-1;border:1px solid #ffffff18;border-radius:50%;pointer-events:none}
+.auth-view::before{width:540px;height:540px;top:-270px;right:-150px;box-shadow:0 0 100px #5b7dff20 inset}
+.auth-card{
+  position:relative;
+  width:min(450px,100%);
+  padding:46px 44px 38px;
+  border:1px solid #ffffff99;
+  border-radius:32px;
+  background:linear-gradient(155deg,#fffffff5,#f7f9ffee);
+  box-shadow:0 34px 100px #01081766,0 1px 0 #fff inset;
+  backdrop-filter:blur(22px) saturate(1.2);
+}
+.auth-card h1{margin:0;font-size:clamp(2.1rem,7vw,3.15rem);line-height:1.04;letter-spacing:-.055em}
+:root[data-theme=dark] .auth-card{
+  border-color:#ffffff1f;
+  background:linear-gradient(155deg,#131f36f2,#0d1728ee);
+  box-shadow:0 34px 100px #00040dcc,0 1px 0 #ffffff14 inset;
+  color:#eef3ff;
+}
+.app-shell{grid-template-columns:300px minmax(0,1fr) 280px;background:var(--surface-2)}
+.sidebar{border-right:1px solid var(--line);border-right-color:var(--line)}
+.brand-row{display:flex;align-items:center;gap:12px;padding:18px 20px;min-height:78px;border-bottom:1px solid color-mix(in srgb,var(--line) 70%,transparent)}
+.brand-row img{width:44px;height:44px;padding:2px;border:1px solid var(--line);background:#fff;box-shadow:var(--shadow-sm)}
+.brand-row strong{font-size:1rem;letter-spacing:-.02em}
+.brand-row span{font-size:.75rem;color:var(--muted);margin-top:1px}
+.room-create{padding:14px;margin:14px 12px 8px;border:1px solid var(--line);border-radius:var(--radius-md);background:var(--surface-2)}
+.room-create label{display:block;color:var(--text);font-size:.68rem;letter-spacing:.06em}
+.inline-form{display:flex;gap:7px;margin-top:10px}
+.inline-form input,.search-bar input{border-color:transparent;background:var(--surface);box-shadow:0 0 0 1px var(--line) inset}
+.inline-form input:hover,.search-bar input:hover{box-shadow:0 0 0 1px #bdc8da inset}
+.room-list{flex:1;overflow:auto;padding:2px 10px 16px}
+.sidebar-footer{padding:10px 14px 14px;border-top:1px solid var(--line);background:linear-gradient(180deg,transparent,var(--surface-2))}
+/* The artwork lives on a pseudo-element so the ambient drift can run on transform
+   instead of background-position. Animating background-position here repainted the
+   largest element in the app on every frame, forever. */
+.conversation{min-width:0;min-height:0;display:flex;flex-direction:column;background:var(--surface-2);position:relative;isolation:isolate;overflow:hidden}
+/* The panel is portrait but the artwork is 16:9, so `cover` already crops to the
+   middle ~55%. Keep the inflation to the minimum the drift needs (1.5% each side,
+   so it can travel +/-1% without exposing an edge) - every extra percent of zoom
+   is image the user never sees. */
+.conversation::before{
+  content:"";
+  position:absolute;
+  inset:-1.5%;
+  z-index:-1;
+  background:
+    linear-gradient(180deg,#f4f7fb61,#ffffff42),
+    url('/image/chat-light.webp') center/cover,
+    var(--surface-2);
+  pointer-events:none;
+}
+:root[data-theme=dark] .conversation::before{
+  background:
+    linear-gradient(180deg,#0b13236b,#0b132352),
+    url('/image/chat-dark.webp') center/cover,
+    var(--surface-2);
+}
+.chat-header{height:78px;padding:0 24px;border-bottom-color:color-mix(in srgb,var(--line) 80%,transparent);background:color-mix(in srgb,var(--surface) 88%,transparent);backdrop-filter:blur(18px) saturate(1.1)}
+.header-actions{display:flex;gap:5px}
+.search-bar{display:flex;gap:10px;padding:11px 20px;border-bottom:1px solid var(--line);background:color-mix(in srgb,var(--surface) 92%,transparent);border-bottom-color:var(--line);box-shadow:0 12px 30px #17213a08}
+.search-bar input{height:42px}
+.message-view{min-height:0;flex:1;display:flex;flex-direction:column;overflow:hidden;background:linear-gradient(180deg,transparent,#4169e805)}
+.message-list{width:100%;max-width:980px;margin:0 auto;padding:22px 30px 32px}
+.composer-shell{padding:8px 22px 18px;border-top:0;background:linear-gradient(180deg,transparent 0,var(--surface) 22%)}
+.composer{display:flex;align-items:flex-end;gap:9px;max-width:920px;margin:0 auto;padding:7px;border:1px solid var(--line);border-radius:22px;background:var(--surface);box-shadow:0 14px 34px #17213a12}
+.composer textarea{min-height:44px;border:0;border-radius:15px;padding:11px 12px;background:transparent;box-shadow:none}
+.composer textarea:focus{border-color:var(--blue);box-shadow:none;border:0}
+.composer-meta{display:flex;justify-content:space-between;margin:7px auto 0;color:var(--muted);font-size:.62rem;max-width:920px;padding:0 8px;font-variant-numeric:tabular-nums}
+.presence-panel{border-left:1px solid var(--line);border-left-color:var(--line)}
+.panel-heading{display:flex;align-items:center;justify-content:space-between;padding:18px 16px;border-bottom:1px solid var(--line);min-height:78px;border-bottom-color:var(--line)}
+.panel-heading strong{font-size:.88rem}
+.panel-heading span{font-size:.7rem;color:var(--muted);margin-top:2px;font-variant-numeric:tabular-nums}
+.presence-list{flex:1;overflow:auto;padding:12px 10px}
+.dialog-actions button{min-width:84px}
+/* Motion language: calm, short, and spatially consistent */
+.auth-card{animation:auth-card-enter var(--dur-5) var(--ease-spring) both}
+.auth-view::before{animation:orb-drift 18s ease-in-out infinite alternate}
+.auth-view::after{width:360px;height:360px;bottom:-230px;left:-80px;animation:orb-drift 22s ease-in-out -7s infinite alternate-reverse}
+/* Staged entrance: sidebar, then content, then presence. The offsets are the
+   ceremony - the panels arrive as a sequence rather than all at once. */
+.app-shell:not([hidden]) .sidebar{animation:panel-enter-left var(--dur-4) var(--ease-emphasized-decel) both}
+.app-shell:not([hidden]) .conversation{animation:content-enter var(--dur-4) var(--ease-emphasized-decel) 60ms both}
+.app-shell:not([hidden]) .conversation::before{animation:conversation-drift 40s ease-in-out 1s infinite alternate}
+.app-shell:not([hidden]) .presence-panel{animation:panel-enter-right var(--dur-4) var(--ease-emphasized-decel) 120ms both}
+.search-bar:not([hidden]){animation:search-reveal .2s ease-out both}
+.sidebar,.presence-panel{min-height:0;background:color-mix(in srgb,var(--surface) 96%,transparent);display:flex;flex-direction:column;z-index:20;backdrop-filter:blur(16px);transition:transform .28s cubic-bezier(.2,.8,.2,1)}
+.composer-meta .text-btn{padding:0;border:0;background:transparent;color:var(--danger);font:inherit;font-weight:750}
+.call-videos{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px}
+.call-videos:empty{display:none}
+.composer-shell{position:relative}
