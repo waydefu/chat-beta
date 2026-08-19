@@ -15,6 +15,7 @@ export default defineConfig({
         'src/firebase/offline-policy.ts',
         'src/messages/message-store.ts',
         'src/messages/message.service.ts',
+        'src/messages/message.view.ts',
         'src/bots/grounding.view.ts',
         'src/realtime/connection-status.ts',
         'src/realtime/presence-state.ts',

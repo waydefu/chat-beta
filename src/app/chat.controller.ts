@@ -32,9 +32,7 @@ import {
 import { onlineRoomMembers, presenceSummary } from '../realtime/presence-state';
 import { TypingSignal } from '../realtime/typing-signal';
 import { markRoomRead, watchAvailableRooms } from '../rooms/room.repository';
-import { renderAiSources } from '../bots/grounding.view';
 import type {
-  CallMessage,
   ChatMessage,
   OnlineUser,
   Reaction,
@@ -43,19 +41,19 @@ import type {
   RoomPreview,
   RoomReadState,
 } from '../types';
-import { compareMessages, formatMessageTime, initialOf, truncate } from '../utils';
+import { compareMessages, initialOf, truncate } from '../utils';
 import { RoomScope, SessionScope } from './lifecycle';
 import {
   actionButton,
-  appendMentionText,
+  createMessageView,
   firstVisibleMessage,
+  type MessageView,
   pinToEnd,
   reactionSignatures,
   textOf,
-} from './message-view';
+} from '../messages/message.view';
 import { applyTheme, preferredTheme, storeTheme, watchSystemTheme, type Theme } from './theme';
 
-const REACTION_CHOICES = ['👍', '❤️', '😂'];
 
 /**
  * A call the user asked for but that has not reached the call controller yet.
@@ -189,6 +187,28 @@ let callController: CallUIController | null = null;
 let voiceController: VoiceMessageController | null = null;
 let pushConfiguration: Promise<void> | null = null;
 const localAiRuns = new Set<string>();
+
+/**
+ * The row renderer. Every binding below is read through a getter because the
+ * controller reassigns them as rooms and sessions change.
+ */
+const messageView: MessageView = createMessageView({
+  currentUser: () => user,
+  message: (id) => messages.get(id),
+  messagePosition: (id) => messagePositions.get(id),
+  readStates: () => readStates.values(),
+  reactions: () => reactions,
+  activeCall: (callId) => activeCalls.get(callId),
+  callActive: () => Boolean(callController?.active),
+  onReply: (message) => setReply(message),
+  onEdit: (message) => startEditing(message),
+  onDelete: (message) => void deleteMessage(message),
+  onJoinCall: (targetRoomId, call) => void joinCall(targetRoomId, call),
+  onReact: (messageId, emoji) => {
+    if (!user || !roomId) return;
+    void setReaction(roomId, messageId, user.uid, emoji).catch((error) => toast(errorText(error), 'error'));
+  },
+});
 
 function errorText(error: unknown): string {
   if (error instanceof Error) return error.message.replace(/^Firebase(?:Error)?:\s*/u, '');
@@ -506,15 +526,6 @@ function renderConnectionStatus(): void {
   ui.connection.replaceChildren(dot, document.createTextNode(view.label));
 }
 
-function messageReadCount(messageId: string): number {
-  const index = messagePositions.get(messageId) ?? -1;
-  if (index < 0) return 0;
-  return [...readStates.values()].filter((state) => {
-    const readIndex = state.lastReadMessageId ? (messagePositions.get(state.lastReadMessageId) ?? -1) : -1;
-    return readIndex >= index;
-  }).length;
-}
-
 /** Set when this client sends, so its own message wins over the follow check. */
 let scrollAfterNextRender = false;
 
@@ -558,7 +569,7 @@ function renderMessageChanges(changedMessageIds: Iterable<string>, options: Mess
   for (const message of ordered) {
     if (!changed.has(message.id) && messageRows.has(message.id)) continue;
     const prior = messageRows.get(message.id);
-    const row = renderMessage(message);
+    const row = messageView.renderMessage(message);
     messageRows.set(message.id, row);
     if (prior?.isConnected) prior.replaceWith(row);
     placeMessageRow(row, message.id, ordered);
@@ -588,7 +599,7 @@ function updateReadReceipts(): void {
     const message = messages.get(messageId);
     const target = row.querySelector<HTMLElement>('[data-role="read"]');
     if (!message || !target || message.senderId !== user?.uid) continue;
-    const count = Math.max(0, messageReadCount(messageId) - 1);
+    const count = Math.max(0, messageView.messageReadCount(messageId) - 1);
     target.textContent = count ? `${count} 人已讀` : '';
   }
 }
@@ -597,148 +608,6 @@ function renderCallMessages(): void {
   renderMessageChanges(messageStore.ordered()
     .filter((message) => message.kind === 'call')
     .map((message) => message.id));
-}
-
-/**
- * The composer shrinking back to one line, the mobile keyboard opening, and
- * sticker or attachment content arriving after its row is in place all change
- * the list's height once the first measurement is already spent. Re-assert on
- * the next frame so those cases do not leave the view short of the end.
- */
-function renderMessage(message: ChatMessage): HTMLElement {
-  const own = user?.uid === message.senderId;
-  const row = document.createElement('article');
-  row.className = `message-row${own ? ' you' : ''}${message.pending ? ' pending' : ''}${message.failed ? ' failed' : ''}`;
-  row.dataset.messageId = message.id;
-  const profile = document.createElement('div');
-  profile.className = 'message-profile';
-  const avatar = document.createElement('span');
-  avatar.className = 'avatar';
-  avatar.textContent = message.senderType === 'bot' ? 'G' : initialOf(message.senderDisplayName);
-  const author = document.createElement('span');
-  author.className = 'message-author';
-  author.textContent = message.senderDisplayName;
-  profile.append(avatar, author);
-
-  const wrap = document.createElement('div');
-  wrap.className = 'message-wrap';
-  const bubble = document.createElement('div');
-  bubble.className = 'message-bubble';
-  if (message.replyToId) {
-    const quote = document.createElement('div');
-    quote.className = 'reply-quote';
-    const reply = messages.get(message.replyToId);
-    quote.textContent = reply ? `${reply.senderDisplayName}：${truncate(textOf(reply), 80)}` : '回覆較早的訊息';
-    bubble.append(quote);
-  }
-  const content = document.createElement('p');
-  content.className = 'message-text';
-  if (message.kind === 'text' || message.kind === 'system') {
-    appendMentionText(content, textOf(message), message.mentions);
-  } else if (message.kind === 'sticker') {
-    content.classList.add('sticker-message');
-    content.textContent = '載入貼圖…';
-    void import('../stickers/sticker.view').then(({ renderSticker }) => renderSticker(content, message));
-  } else if (message.kind === 'call') {
-    content.textContent = `${message.senderDisplayName} ${textOf(message)}`;
-    content.classList.add('call-message');
-  } else {
-    void import('../media/attachment.view').then(({ renderAttachmentContent }) => renderAttachmentContent(content, message));
-  }
-  const meta = document.createElement('div');
-  meta.className = 'message-meta';
-  const time = document.createElement('span');
-  time.textContent = formatMessageTime(message);
-  meta.append(time);
-  if (message.editedAt) {
-    const edited = document.createElement('span');
-    edited.textContent = '已編輯';
-    meta.append(edited);
-  }
-  if (own) {
-    const read = document.createElement('span');
-    read.dataset.role = 'read';
-    const count = Math.max(0, messageReadCount(message.id) - 1);
-    read.textContent = count ? `${count} 人已讀` : '';
-    meta.append(read);
-  }
-  bubble.append(content);
-  if (message.metadata?.grounding?.usedSearch && message.metadata.grounding.sources?.length) {
-    bubble.append(renderAiSources(message.metadata.grounding.sources));
-  }
-  if (message.kind === 'call' && message.event === 'started') bubble.append(renderCallInvite(message));
-  bubble.append(meta);
-  wrap.append(bubble, renderReactionBar(message));
-  if (message.senderType === 'user' && !message.deletedAt) wrap.append(renderMessageActions(message, own));
-  row.append(profile, wrap);
-  return row;
-}
-
-/**
- * A call invitation is only actionable while the call is live, and the server
- * never writes a second message when it ends - the calls collection is the only
- * signal. Without this the bubble kept offering to join a call that finished
- * hours ago.
- */
-function renderCallInvite(message: CallMessage): HTMLElement {
-  const call = activeCalls.get(message.callId);
-  if (!call) {
-    const ended = document.createElement('p');
-    ended.className = 'call-ended';
-    ended.textContent = '通話已結束';
-    return ended;
-  }
-  if (callController?.active) {
-    const busy = document.createElement('p');
-    busy.className = 'call-ended';
-    busy.textContent = '通話進行中';
-    return busy;
-  }
-  if (call.status === 'ending') {
-    const ending = document.createElement('p');
-    ending.className = 'call-ended';
-    ending.textContent = '通話正在結束';
-    return ending;
-  }
-  const join = document.createElement('button');
-  join.type = 'button';
-  join.className = 'call-join';
-  const action = call.status === 'ringing' ? '接聽' : '加入';
-  join.textContent = `${action}${call.kind === 'video' ? '視訊' : '語音'}通話`;
-  join.addEventListener('click', () => void joinCall(message.roomId, call));
-  return join;
-}
-
-function renderMessageActions(message: ChatMessage, own: boolean): HTMLElement {
-  const actions = document.createElement('div');
-  actions.className = 'message-actions';
-  actions.append(actionButton('回覆', () => setReply(message)));
-  if (own && message.kind === 'text') {
-    actions.append(actionButton('編輯', () => startEditing(message)));
-    actions.append(actionButton('刪除', () => void deleteMessage(message), true));
-  }
-  return actions;
-}
-
-function renderReactionBar(message: ChatMessage): HTMLElement {
-  const bar = document.createElement('div');
-  bar.className = 'reaction-bar';
-  const messageReactions = reactions.filter((reaction) => reaction.messageId === message.id);
-  for (const emoji of REACTION_CHOICES) {
-    const matching = messageReactions.filter((reaction) => reaction.emoji === emoji);
-    const own = matching.some((reaction) => reaction.userId === user?.uid);
-    const button = document.createElement('button');
-    button.type = 'button';
-    button.className = own ? 'selected' : '';
-    button.textContent = `${emoji}${matching.length ? ` ${matching.length}` : ''}`;
-    button.setAttribute('aria-pressed', String(own));
-    button.addEventListener('click', () => {
-      if (!user || !roomId) return;
-      void setReaction(roomId, message.id, user.uid, own ? null : emoji).catch((error) => toast(errorText(error), 'error'));
-    });
-    bar.append(button);
-  }
-  return bar;
 }
 
 function watchVisibleReactions(): void {
@@ -762,7 +631,7 @@ function updateReactionBars(messageIds: Iterable<string>): void {
     const message = messages.get(messageId);
     const row = messageRows.get(messageId);
     const prior = row?.querySelector<HTMLElement>('.reaction-bar');
-    if (message && prior) prior.replaceWith(renderReactionBar(message));
+    if (message && prior) prior.replaceWith(messageView.renderReactionBar(message));
   }
 }
 
