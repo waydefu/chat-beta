@@ -2,7 +2,7 @@
 
 > **範圍**：[TECH-DEBT](TECH-DEBT.md) 的 TD-U1、TD-U2、TD-U3、TD-U4。四項的「最早可處理」欄位皆為 `UI Phase 3`，依賴欄位皆為「UI 方案選定」。
 > **建立日期**：2026-08-19
-> **狀態**：計畫。尚未動工。
+> **狀態**：TD-U2／U3／U4 已完成並合併；TD-U1 完成第 1 步，其餘未動。進度見下方「進度」節。
 
 ---
 
@@ -128,7 +128,7 @@ utilities.css  少量共用修飾
 
 ### 驗收
 
-* 無重複選擇器（可由腳本檢查，比照 `scripts/index-contract.mjs` 的做法納入 `pnpm test:unit`）
+* 無重複選擇器——**實作後修正為「不得存在可安全合併而未合併的重複」**：102 組中 27 組一旦合併就會改變渲染，見 DC-5
 * `.call-video` 只定義一次
 * 視覺回歸：改版前後截圖比對無非預期差異
 
@@ -146,7 +146,7 @@ utilities.css  少量共用修飾
 | `@keyframes ring-pulse` | 共用，不可刪 | **4 條規則使用**（336／440／525／546），其中 **336 就在本次要刪的區塊內**（`.chat-head-badge::after`） | 遵守，不可刪。刪除後仍有 440／525／546 三處使用 |
 
 `#chat-heads` 的 DOM 是 `role="group" aria-label="未讀訊息懸浮氣泡"` 的空容器且帶 `hidden`。
-它是「功能未啟用」還是「功能已放棄」，登記簿沒有記載，**動工前需要一個決定**。
+它是「功能未啟用」還是「功能已放棄」原本沒有記載；**2026-08-19 由專案擁有者裁定為已放棄**，TD-U3 已據此把 CSS 與 DOM 一併移除（PR #56）。
 
 ---
 
@@ -200,10 +200,81 @@ TD-U1 與 TD-U2 互相牽動（拆模組會移動 markup，影響選擇器），
 
 ---
 
-## 7. 動工前待決事項
+## 進度（2026-08-19）
 
-| # | 事項 | 需要誰決定 |
+| 項目 | 狀態 | PR |
 |---|---|---|
-| 1 | `#chat-heads` 是未啟用還是已放棄 | 專案擁有者 |
-| 2 | 群集 4（媒體語音）與 5（通話）是否獨立成模組 | 動工前先量行數再定 |
-| 3 | 是否更新 TECH-DEBT 的 TD-U1／U3／U4 三列以反映實況 | 建議更新，否則後續接手者仍會照錯誤數字執行 |
+| TD-U3 死碼清除 | ✅ 完成 | #56 |
+| TD-U2 CSS 分層 | ✅ 完成（去重部分達成） | #57 |
+| TD-U4 圖示改 inline SVG | ✅ 完成 | #58 |
+| TD-U1 第 1 步：純視圖函式 | ✅ 完成 | #59 |
+| TD-U1 剩餘 | 未開始 | — |
+
+四項的登記簿數字核對結果與 DC-2…DC-5 見 [TECH-DEBT](TECH-DEBT.md)。
+
+### TD-U1 還剩什麼
+
+第 1 步只搬走 6 個零依賴純函式（`src/app/message-view.ts`，控制器 1497 → 1447 行）。剩下的依難度排序：
+
+1. **`renderMessage` 一組**——需約 15 個依賴：狀態 `user`／`messages`／`reactions`／`activeCalls`／`roomId`／`callController`，
+   以及回呼 `setReply`／`startEditing`／`deleteMessage`／`joinCall`／`setReaction`。屬依賴注入改造，非搬移。
+2. RoomController（204 行）、ComposerController（composer 138 ＋ media 67 ＋ ai 58）、PresenceController（100 行）、SessionController（135 行）
+3. calls（98 行）與 search（19 行）留在控制器；shell（156 行）與 `bindEvents`（116 行）亦然
+
+**最大的結構障礙仍未解決**：36 個跨群集共用的模組層級 `let` ＋ 72 行 `ui` 物件。每次抽出都得明確帶走狀態存取，
+或先做一次「集中為 state 物件」的改造——但後者會一次動到所有群集，與逐模組進行相衝突，需要先決定取捨。
+
+---
+
+## 工具鏈：本機環境的已知陷阱
+
+**`pnpm` 不在 PATH，且 `corepack enable` 會失敗**（需寫入 `C:\Program Files
+odejs\`，權限不足）。改用 corepack 代跑：
+
+```bash
+export PATH="/c/Program Files/nodejs:$PATH"
+corepack pnpm install --frozen-lockfile
+corepack pnpm typecheck
+corepack pnpm lint
+```
+
+`packageManager` 釘在 pnpm 11.9.0，corepack 會自動取得正確版本。本機 Node 為 v24，專案要求 v22——
+typecheck 與 lint 實測不受影響。
+
+**網路不穩定會偽裝成別的問題**，這在本階段耗掉大量時間，務必先排除：
+
+* `pnpm install` 可能以 `Lockfile failed supply-chain policy check` ＋ `ERR_PNPM_BROKEN_METADATA_JSON` 失敗，
+  實際原因是 registry 反覆 `ECONNRESET`、單一請求耗時 40–70 秒。**重試即可**，網路正常時約 1 分 35 秒完成。
+* CI 也會遇到同一件事：PR #59 第一次跑了 **30 分 18 秒後被取消**，卡在 `playwright install --with-deps chromium`。
+  該次的 lint／typecheck／unit／functions／rules **全部已通過**，只有 e2e／build／audit 被 skipped。
+  **判讀方式**：先看逐步驟結論再下結論，`gh run view <id> --json jobs`；重跑後 2 分 32 秒全綠。
+
+---
+
+## CSS 計算樣式比對治具
+
+TD-U2 靠它才敢動。它在 15 個視窗寬度下逐元素逐屬性比對兩份樣式表，
+**4,088,550 次比對**，抓到三個讀程式碼絕對看不出來的回歸。
+
+**目前只存在於暫存目錄，尚未進倉庫。** 重建方式：
+
+1. 產生涵蓋每條選擇器的 DOM fixture——直接從樣式表的選擇器反推節點結構。
+   必要：`index.html` 只用到 131 個 class 中的 59 個，漏掉的 72 個正是執行期才建立、且重複最嚴重的元件。
+2. 兩個 iframe 各載入舊／新樣式表，對 `document.querySelectorAll('*')` 逐一比對全部 485 個計算屬性。
+3. **雙向控制不可省**：相同輸入必須得到 0 差異；注入一處 1px 變更必須被抓到並正確定位。
+4. 逐寬度執行，至少涵蓋每個斷點的邊界（如 719/720/721、1049/1050/1051）——
+   TD-U2 有兩個回歸只在 ≤720px 出現，單一寬度完全測不到。
+
+TD-U1 後續會搬動渲染程式碼，屆時同樣需要它。值得以獨立 PR 固化進倉庫。
+
+---
+
+## 7. 待決事項
+
+| # | 事項 | 狀態 |
+|---|---|---|
+| 1 | `#chat-heads` 是未啟用還是已放棄 | ✅ 2026-08-19 裁定為放棄，TD-U3 已依此完成 |
+| 2 | 群集 4（媒體語音）與 5（通話）是否獨立成模組 | ✅ 已量測：media 67 行、calls 98 行，皆不獨立，模組數由 7 收斂為 5 |
+| 3 | 是否更新 TECH-DEBT 以反映實況 | ✅ 已更新，並登錄 DC-2…DC-5 |
+| 4 | TD-U1 的 36 個共用 `let` 要逐模組帶走，還是先集中為 state 物件 | **未決**，這是剩餘工作的主要取捨 |
+| 5 | CSS 比對治具是否固化進倉庫 | **未決**，見上節 |
