@@ -42,10 +42,12 @@ import type {
 } from '../types';
 import { compareMessages, initialOf, truncate } from '../utils';
 import { createPresenceView, renderConnectionStatus, type PresenceView } from '../realtime/presence.view';
+import { createAiDraftView, renderAiDraft, type AiDraftView } from '../bots/ai-draft.view';
 import { createRoomListView, type RoomListView } from '../rooms/room.view';
+import { createConfirmDialog, type ShowConfirm } from './confirm-dialog';
+import { createToast, type Toast } from './toast';
 import { RoomScope, SessionScope } from './lifecycle';
 import {
-  actionButton,
   createMessageView,
   firstVisibleMessage,
   type MessageView,
@@ -193,6 +195,20 @@ const localAiRuns = new Set<string>();
  * The row renderer. Every binding below is read through a getter because the
  * controller reassigns them as rooms and sessions change.
  */
+const toast: Toast = createToast(ui.toastRegion);
+
+const showConfirm: ShowConfirm = createConfirmDialog({
+  dialog: ui.confirmDialog,
+  title: ui.confirmTitle,
+  copy: ui.confirmCopy,
+  action: ui.confirmAction,
+});
+
+const aiDraftView: AiDraftView = createAiDraftView({
+  list: ui.messageList,
+  isLocalRun: (runId) => localAiRuns.has(runId),
+});
+
 const roomListView: RoomListView = createRoomListView({
   list: ui.roomList,
   count: ui.roomCount,
@@ -233,14 +249,6 @@ function errorText(error: unknown): string {
   return String(error);
 }
 
-function toast(message: string, kind: 'info' | 'error' = 'info'): void {
-  const element = document.createElement('div');
-  element.className = `toast${kind === 'error' ? ' error' : ''}`;
-  element.textContent = message;
-  ui.toastRegion.append(element);
-  window.setTimeout(() => element.remove(), 4500);
-}
-
 function setTheme(theme: Theme): void {
   applyTheme(theme);
   ui.theme.checked = theme === 'dark';
@@ -267,16 +275,6 @@ function setRoomControls(enabled: boolean): void {
   ui.voiceCall.disabled = !enabled || callBusy;
   ui.videoCall.disabled = !enabled || callBusy;
   ui.input.placeholder = enabled ? '輸入訊息或使用 @ 提及…' : '先選擇聊天室…';
-}
-
-function showConfirm(title: string, copy: string, action = '確認'): Promise<boolean> {
-  ui.confirmTitle.textContent = title;
-  ui.confirmCopy.textContent = copy;
-  ui.confirmAction.textContent = action;
-  ui.confirmDialog.showModal();
-  return new Promise((resolve) => {
-    ui.confirmDialog.addEventListener('close', () => resolve(ui.confirmDialog.returnValue === 'confirm'), { once: true });
-  });
 }
 
 function closeRoom(): void {
@@ -440,7 +438,7 @@ async function openRoom(nextRoomId: string): Promise<void> {
     }, () => { if (scope === roomScope) failClosedRealtime(); }));
     scope.add(roomRealtime.watchAiDrafts((drafts) => {
       if (scope !== roomScope) return;
-      renderRemoteDrafts(drafts);
+      aiDraftView.renderRemoteDrafts(drafts);
     }, () => { if (scope === roomScope) failClosedRealtime(); }));
     scope.add(() => void roomRealtime.close());
   } catch {
@@ -700,37 +698,6 @@ async function streamGemini(sourceMessageId: string): Promise<void> {
     localAiRuns.delete(`${sourceMessageId}_gemini`);
     row.remove();
   }
-}
-
-function renderRemoteDrafts(drafts: Map<string, { botId: string; text: string; status: string }>): void {
-  document.querySelectorAll('[data-remote-ai-draft]').forEach((element) => element.remove());
-  for (const [runId, draft] of drafts) {
-    if (localAiRuns.has(runId) || draft.status !== 'streaming') continue;
-    const row = renderAiDraft(runId, draft.text, false);
-    row.dataset.remoteAiDraft = 'true';
-    ui.messageList.append(row);
-  }
-}
-
-function renderAiDraft(runId: string, text: string, cancellable: boolean, cancel?: () => void): HTMLElement {
-  const row = document.createElement('article');
-  row.className = 'message-row ai-draft';
-  row.dataset.runId = runId;
-  const wrap = document.createElement('div');
-  wrap.className = 'message-wrap';
-  const bubble = document.createElement('div');
-  bubble.className = 'message-bubble';
-  const content = document.createElement('p');
-  content.className = 'message-text';
-  content.textContent = text || 'Gemini 正在思考…';
-  bubble.append(content);
-  wrap.append(bubble);
-  if (cancellable && cancel) wrap.append(actionButton('停止生成', cancel));
-  const avatar = document.createElement('span');
-  avatar.className = 'avatar';
-  avatar.textContent = 'G';
-  row.append(avatar, wrap);
-  return row;
 }
 
 function updateComposer(): void {
