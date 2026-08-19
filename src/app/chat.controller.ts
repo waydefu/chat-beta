@@ -21,7 +21,6 @@ import {
 import { requireValidMessage, structuredMentions } from '../messages/message.service';
 import type { GlobalPresenceSession, RealtimeRoomSession } from '../realtime/realtime.repository';
 import {
-  connectionStatusView,
   escalateConnectionState,
   INITIAL_CONNECTION_STATE,
   nextConnectionState,
@@ -29,7 +28,7 @@ import {
   type RealtimeConnectionEvent,
   type RealtimeConnectionState,
 } from '../realtime/connection-status';
-import { onlineRoomMembers, presenceSummary } from '../realtime/presence-state';
+import { onlineRoomMembers } from '../realtime/presence-state';
 import { TypingSignal } from '../realtime/typing-signal';
 import { markRoomRead, watchAvailableRooms } from '../rooms/room.repository';
 import type {
@@ -42,6 +41,8 @@ import type {
   RoomReadState,
 } from '../types';
 import { compareMessages, initialOf, truncate } from '../utils';
+import { createPresenceView, renderConnectionStatus, type PresenceView } from '../realtime/presence.view';
+import { createRoomListView, type RoomListView } from '../rooms/room.view';
 import { RoomScope, SessionScope } from './lifecycle';
 import {
   actionButton,
@@ -192,6 +193,23 @@ const localAiRuns = new Set<string>();
  * The row renderer. Every binding below is read through a getter because the
  * controller reassigns them as rooms and sessions change.
  */
+const roomListView: RoomListView = createRoomListView({
+  list: ui.roomList,
+  count: ui.roomCount,
+  rooms: () => rooms.values(),
+  roomCount: () => rooms.size,
+  roomState: (id) => roomStates.get(id),
+  activeRoomId: () => roomId,
+  onSelect: (room) => void selectRoom(room),
+});
+
+const presenceView: PresenceView = createPresenceView({
+  list: ui.presenceList,
+  count: ui.presenceCount,
+  onlineUsers: () => onlineUsers,
+  hasRoom: () => Boolean(roomId),
+});
+
 const messageView: MessageView = createMessageView({
   currentUser: () => user,
   message: (id) => messages.get(id),
@@ -294,9 +312,9 @@ function closeRoom(): void {
   // The header and the member list both describe the room that just closed.
   // Leaving them as they were is what made a switched-away room look connected.
   pushConnection({ type: 'closed' });
-  renderPresenceList();
+  presenceView.render();
   setRoomControls(false);
-  renderRooms();
+  roomListView.render();
 }
 
 function cleanupSession(): void {
@@ -311,44 +329,6 @@ function cleanupSession(): void {
   rooms.clear();
   roomStates.clear();
   user = null;
-}
-
-function roomUnread(room: RoomPreview): boolean {
-  const latest = room.lastMessage?.id;
-  return Boolean(latest && roomStates.get(room.id)?.lastReadMessageId !== latest);
-}
-
-function renderRooms(): void {
-  ui.roomList.replaceChildren();
-  ui.roomCount.textContent = String(rooms.size);
-  for (const room of rooms.values()) {
-    const joined = roomStates.get(room.id)?.membershipStatus === 'active';
-    const button = document.createElement('button');
-    button.type = 'button';
-    button.className = `room-item${room.id === roomId ? ' active' : ''}`;
-    button.dataset.roomId = room.id;
-    const avatar = document.createElement('span');
-    avatar.className = 'room-initial';
-    avatar.textContent = initialOf(room.name);
-    const copy = document.createElement('span');
-    copy.className = 'room-copy';
-    const name = document.createElement('strong');
-    name.textContent = room.name;
-    const preview = document.createElement('span');
-    preview.textContent = joined
-      ? room.lastMessage?.preview || '尚無訊息'
-      : room.visibility === 'public' ? '公開房間 · 點擊加入' : '私人房間';
-    copy.append(name, preview);
-    button.append(avatar, copy);
-    if (joined && roomUnread(room)) {
-      const unread = document.createElement('span');
-      unread.className = 'unread-dot';
-      unread.setAttribute('aria-label', '有未讀訊息');
-      button.append(unread);
-    }
-    button.addEventListener('click', () => void selectRoom(room));
-    ui.roomList.append(button);
-  }
 }
 
 async function selectRoom(room: RoomPreview): Promise<void> {
@@ -393,7 +373,7 @@ async function openRoom(nextRoomId: string): Promise<void> {
   ui.messageView.hidden = false;
   setRoomControls(true);
   setSidebar(false);
-  renderRooms();
+  roomListView.render();
   const scope = new RoomScope();
   roomScope = scope;
   pushConnection({ type: 'opening' });
@@ -480,7 +460,7 @@ function failClosedRealtime(): void {
 
 function failClosedPresence(): void {
   onlineUsers = [];
-  renderPresenceList();
+  presenceView.render();
 }
 
 function pushConnection(event: RealtimeConnectionEvent): void {
@@ -490,7 +470,7 @@ function pushConnection(event: RealtimeConnectionEvent): void {
 function applyConnectionState(next: RealtimeConnectionState): void {
   if (next === connectionState) return;
   connectionState = next;
-  renderConnectionStatus();
+  renderConnectionStatus(ui.connection, connectionState);
   armConnectionEscalation();
 }
 
@@ -510,21 +490,6 @@ function armConnectionEscalation(): void {
   }, wait);
 }
 
-const STATUS_DOT_CLASS: Record<string, string> = {
-  neutral: 'status-dot',
-  pending: 'status-dot pending',
-  online: 'status-dot online',
-  warn: 'status-dot offline',
-  down: 'status-dot down',
-};
-
-function renderConnectionStatus(): void {
-  const view = connectionStatusView(connectionState);
-  const dot = document.createElement('span');
-  dot.className = STATUS_DOT_CLASS[view.tone] ?? 'status-dot';
-  dot.setAttribute('aria-hidden', 'true');
-  ui.connection.replaceChildren(dot, document.createTextNode(view.label));
-}
 
 /** Set when this client sends, so its own message wins over the follow check. */
 let scrollAfterNextRender = false;
@@ -850,27 +815,6 @@ async function loadOlder(): Promise<void> {
   }
 }
 
-function renderPresenceList(): void {
-  ui.presenceList.replaceChildren();
-  ui.presenceCount.textContent = presenceSummary(onlineUsers.length, Boolean(roomId));
-  for (const online of onlineUsers) {
-    const item = document.createElement('div');
-    item.className = 'presence-item';
-    const avatar = document.createElement('span');
-    avatar.className = 'presence-avatar';
-    avatar.textContent = initialOf(online.displayName);
-    const copy = document.createElement('span');
-    copy.className = 'presence-copy';
-    const name = document.createElement('strong');
-    name.textContent = online.displayName;
-    const status = document.createElement('span');
-    status.textContent = '在線';
-    copy.append(name, status);
-    item.append(avatar, copy);
-    ui.presenceList.append(item);
-  }
-}
-
 function watchMemberPresence(): void {
   presenceUnsubscribe?.();
   presenceUnsubscribe = null;
@@ -878,7 +822,7 @@ function watchMemberPresence(): void {
   const currentUser = user;
   if (!presence || !currentUser || !roomId) {
     onlineUsers = [];
-    renderPresenceList();
+    presenceView.render();
     return;
   }
   presenceUnsubscribe = presence.watchOnlineUsers(
@@ -886,7 +830,7 @@ function watchMemberPresence(): void {
     (onlineIds) => {
       if (currentUser !== user) return;
       onlineUsers = onlineRoomMembers(members, onlineIds, currentUser.uid);
-      renderPresenceList();
+      presenceView.render();
     },
     () => failClosedPresence(),
   );
@@ -1137,7 +1081,7 @@ function beginSession(nextUser: AuthenticatedUser): void {
   scope.add(watchAvailableRooms(nextUser.uid, (available, states) => {
     rooms = new Map(available.map((room) => [room.id, room]));
     roomStates = states;
-    renderRooms();
+    roomListView.render();
     const requested = new URL(window.location.href).searchParams.get('room');
     if (!roomId && requested && rooms.has(requested)) void selectRoom(rooms.get(requested)!);
   }, (error) => toast(`聊天室清單讀取失敗：${errorText(error)}`, 'error')));
