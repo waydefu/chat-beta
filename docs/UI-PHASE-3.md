@@ -2,7 +2,7 @@
 
 > **範圍**：[TECH-DEBT](TECH-DEBT.md) 的 TD-U1、TD-U2、TD-U3、TD-U4。四項的「最早可處理」欄位皆為 `UI Phase 3`，依賴欄位皆為「UI 方案選定」。
 > **建立日期**：2026-08-19
-> **狀態**：TD-U2／U3／U4 已完成並合併；TD-U1 完成第 1 步，其餘未動。進度見下方「進度」節。
+> **狀態**：TD-U2／U3／U4 完成；TD-U1 拆出六個模組後**暫停**，卡在狀態歸屬決定。詳見「進度」節。
 
 ---
 
@@ -200,29 +200,71 @@ TD-U1 與 TD-U2 互相牽動（拆模組會移動 markup，影響選擇器），
 
 ---
 
-## 進度（2026-08-19）
+## 進度（2026-08-19，暫停於此）
 
 | 項目 | 狀態 | PR |
 |---|---|---|
 | TD-U3 死碼清除 | ✅ 完成 | #56 |
-| TD-U2 CSS 分層 | ✅ 完成（去重部分達成） | #57 |
+| TD-U2 CSS 分層 | ✅ 完成（去重部分達成，見 DC-5） | #57 |
 | TD-U4 圖示改 inline SVG | ✅ 完成 | #58 |
-| TD-U1 第 1 步：純視圖函式 | ✅ 完成 | #59 |
-| TD-U1 剩餘 | 未開始 | — |
+| TD-U1 拆解控制器 | **部分完成，卡在狀態歸屬決定** | #59、#61、#62、#63 |
 
-四項的登記簿數字核對結果與 DC-2…DC-5 見 [TECH-DEBT](TECH-DEBT.md)。
+### TD-U1 已完成的部分
 
-### TD-U1 還剩什麼
+`chat.controller.ts` **1497 → 1225 行（−272，18.2%）**，拆出六個模組：
 
-第 1 步只搬走 6 個零依賴純函式（`src/app/message-view.ts`，控制器 1497 → 1447 行）。剩下的依難度排序：
+| 模組 | 行數 | 內容 |
+|---|---|---|
+| `messages/message.view.ts` | 267 | 訊息列渲染、`textOf`、`reactionSignatures` 等 |
+| `rooms/room.view.ts` | 75 | 房間清單、`roomUnread` |
+| `realtime/presence.view.ts` | 74 | 在線清單、連線指示 |
+| `bots/ai-draft.view.ts` | 67 | AI 串流草稿列 |
+| `app/confirm-dialog.ts` | 29 | 確認對話框 |
+| `app/toast.ts` | 21 | 浮動通知 |
 
-1. **`renderMessage` 一組**——需約 15 個依賴：狀態 `user`／`messages`／`reactions`／`activeCalls`／`roomId`／`callController`，
-   以及回呼 `setReply`／`startEditing`／`deleteMessage`／`joinCall`／`setReaction`。屬依賴注入改造，非搬移。
-2. RoomController（204 行）、ComposerController（composer 138 ＋ media 67 ＋ ai 58）、PresenceController（100 行）、SessionController（135 行）
-3. calls（98 行）與 search（19 行）留在控制器；shell（156 行）與 `bindEvents`（116 行）亦然
+測試：`tests/message-view.test.ts`（131 行）、`tests/room-view.test.ts`（63 行），共 16 例。
+四個 PR 皆本機驗過 lint／typecheck／test:unit／build，核心 bundle 維持在 205.8 kB gzip 上下（預算 210 kB）。
 
-**最大的結構障礙仍未解決**：36 個跨群集共用的模組層級 `let` ＋ 72 行 `ui` 物件。每次抽出都得明確帶走狀態存取，
-或先做一次「集中為 state 物件」的改造——但後者會一次動到所有群集，與逐模組進行相衝突，需要先決定取捨。
+**共用的 seam 模式**：狀態以 getter 傳入（換房間／換 session 會被反映，不會凍結在舊值），
+DOM 容器於建構時取一次，模組本身不訂閱任何東西——訂閱仍由控制器持有並呼叫 `render()`。
+
+### 為什麼停在這裡
+
+**seam 模式能搬的已經搬完。** 逐函式量過依賴後，`renderAiDraft` 是最後一個完全不碰模組狀態的。
+
+剩下的都是編排邏輯，各自同時碰 `ui` 與多個共用 `let`：
+
+| 函式 | 行數 |
+|---|---|
+| `bindEvents` | 116 |
+| `openRoom` | 85 |
+| `beginSession` | 56 |
+| `submitMessage` | 37 |
+| `updateMentionList` | 34 |
+
+硬用同樣模式拆，只會產生參數列表極長、卻沒有明確 ownership 的空殼，
+**達不到 TD-U1 自己的驗收條件**（「各有明確 ownership，不互相反向依賴」）。
+
+控制器目前仍有 **33 個模組層級 `let`**（起初 36）。這是剩餘工作的唯一障礙。
+
+### 接手時的第一個決定（待決事項 4）
+
+| 方案 | 作法 | 代價 |
+|---|---|---|
+| **A** | 維持現狀，每次抽出自己帶走狀態存取 | 每步小、可單獨驗證；但編排類函式的參數會爆炸 |
+| **B** | 先把 33 個 `let` 集中成一個 state 物件，再繼續拆 | 拆完乾淨；但「集中」會一次動到所有群集，單一 PR 很大、review 成本高 |
+
+**撰寫當下的傾向是 B**，理由是條件已改變：工具鏈可用後 `typecheck` 會即時抓出所有引用錯誤，
+而集中狀態動到的正是機械性的引用改寫——編譯器最擅長把關的那類。
+（實證：搬 `renderMessage` 時誤刪了兩個夾在函式間的宣告、又留下兩個失效呼叫點，`typecheck` 一次列出全部五個錯誤。）
+
+但這是取捨不是定論，接手者可自行判斷。
+
+### 已知的覆蓋缺口
+
+六個模組中建 DOM 的部分**沒有單元測試**。要測需先做 `bots/grounding.view.ts` 那種
+注入 document 的改造（該檔匯出 `MinimalDocument` 型別供測試注入）。
+目前這些路徑只由 `pnpm test:e2e` 涵蓋，兩個測試檔皆已在檔頭寫明，未假裝有覆蓋。
 
 ---
 
@@ -274,7 +316,25 @@ TD-U1 後續會搬動渲染程式碼，屆時同樣需要它。值得以獨立 P
 | # | 事項 | 狀態 |
 |---|---|---|
 | 1 | `#chat-heads` 是未啟用還是已放棄 | ✅ 2026-08-19 裁定為放棄，TD-U3 已依此完成 |
-| 2 | 群集 4（媒體語音）與 5（通話）是否獨立成模組 | ✅ 已量測：media 67 行、calls 98 行，皆不獨立，模組數由 7 收斂為 5 |
+| 2 | 媒體語音與通話是否獨立成模組 | ✅ 已量測：media 67 行、calls 98 行，皆不獨立，模組數由 7 收斂為 5 |
 | 3 | 是否更新 TECH-DEBT 以反映實況 | ✅ 已更新，並登錄 DC-2…DC-5 |
-| 4 | TD-U1 的 36 個共用 `let` 要逐模組帶走，還是先集中為 state 物件 | **未決**，這是剩餘工作的主要取捨 |
-| 5 | CSS 比對治具是否固化進倉庫 | **未決**，見上節 |
+| 4 | **TD-U1 的 33 個共用 `let`：逐模組帶走，還是先集中為 state 物件** | **未決——這是接手後的第一件事**，見「進度」節 |
+| 5 | CSS 比對治具是否固化進倉庫 | **未決**。目前只存在於暫存目錄，重建方式見上節；TD-U1 後續若動到渲染程式碼會再需要它 |
+
+---
+
+## 接手指引
+
+1. 讀本檔的「進度」節與「工具鏈」節——後者可省下數小時的誤判。
+2. 先做待決事項 4 的決定；在那之前不要再抽模組，否則會產生沒有 ownership 的空殼。
+3. 環境準備：
+
+```bash
+export PATH="/c/Program Files/nodejs:$PATH"
+corepack pnpm install --frozen-lockfile
+corepack pnpm typecheck && corepack pnpm lint && corepack pnpm test:unit
+```
+
+4. 動 `src/` 之前先讀 `src/AGENTS.md`（`.claude/rules/client.md` 有此要求）。
+   本階段第一個 PR 因為沒先讀，把視圖模組放錯位置也漏了測試，隔一個 PR 才修正。
+5. 每個 PR 走 `agent/<slug>` 分支，一個 PR 一個關注點。
