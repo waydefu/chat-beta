@@ -1125,11 +1125,49 @@ function bindEvents(): void {
     applyMessageFilter();
   });
   ui.historicalSearch.addEventListener('click', () => void runHistoricalSearch());
-  ui.openSidebar.addEventListener('click', () => setSidebar(true));
-  ui.closeSidebar.addEventListener('click', () => setSidebar(false));
-  ui.sidebarScrim.addEventListener('click', () => setSidebar(false));
-  ui.membersToggle.addEventListener('click', () => setPresence(true));
-  ui.closeMembers.addEventListener('click', () => setPresence(false));
+  ui.openSidebar.addEventListener('click', () => {
+    setSidebar(true);
+    ui.closeSidebar.focus();
+  });
+  ui.closeSidebar.addEventListener('click', () => {
+    setSidebar(false);
+    ui.openSidebar.focus();
+  });
+  ui.sidebarScrim.addEventListener('click', () => {
+    setSidebar(false);
+    ui.openSidebar.focus();
+  });
+  ui.membersToggle.addEventListener('click', () => {
+    setPresence(true);
+    ui.closeMembers.focus();
+  });
+  ui.closeMembers.addEventListener('click', () => {
+    setPresence(false);
+    ui.membersToggle.focus();
+  });
+  document.addEventListener('keydown', (event) => {
+    if (event.key !== 'Escape' || document.querySelector('dialog[open]')) return;
+    if (ui.presencePanel.classList.contains('open')) {
+      event.preventDefault();
+      setPresence(false);
+      ui.membersToggle.focus();
+      return;
+    }
+    if (ui.sidebar.classList.contains('open')) {
+      event.preventDefault();
+      setSidebar(false);
+      ui.openSidebar.focus();
+      return;
+    }
+    if (!ui.searchBar.hidden) {
+      event.preventDefault();
+      ui.searchBar.hidden = true;
+      ui.searchToggle.setAttribute('aria-expanded', 'false');
+      ui.searchInput.value = '';
+      applyMessageFilter();
+      ui.searchToggle.focus();
+    }
+  });
   ui.theme.addEventListener('change', () => {
     const theme = ui.theme.checked ? 'dark' : 'light';
     storeTheme(theme);

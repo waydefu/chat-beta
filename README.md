@@ -1,6 +1,6 @@
 # Chat Lite 3.0
 
-Production operators should start with [Production handoff](docs/HANDOFF.md). It records the live deployment, migration and backup references, provider gates, and remaining follow-up work. 要啟用尚未上線的功能（推播、通話、附件、AI、搜尋）看 [FEATURE-ENABLEMENT](docs/FEATURE-ENABLEMENT.md)；Android APK 的路線評估看 [ANDROID-APK](docs/ANDROID-APK.md)。
+Production operators should start with [Production handoff](docs/HANDOFF.md). It records the live deployment, migration and backup references, provider gates, and remaining follow-up work. 正式介面的量測依據、元件對照與適配邊界看 [SAO UI 規格](docs/SAO-UI.md)；要啟用尚未上線的功能（推播、通話、附件、AI、搜尋）看 [FEATURE-ENABLEMENT](docs/FEATURE-ENABLEMENT.md)；Android APK 的路線評估看 [ANDROID-APK](docs/ANDROID-APK.md)。
 
 Chat Lite 是以 vanilla TypeScript、Firebase Hosting、Firestore 與 Realtime Database 建立的多人聊天室。3.0 將授權來源收斂到 Firestore room membership，並把 presence、typing 與 AI draft 限制在具 Room ACL 的 RTDB ephemeral namespace。
 
