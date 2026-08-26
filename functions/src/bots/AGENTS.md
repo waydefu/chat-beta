@@ -70,7 +70,9 @@ pnpm test:functions
 node node_modules/typescript/bin/tsc -p functions/tsconfig.json
 ```
 
-Policy modules have unit coverage (`model-policy`, `grounding-policy`, `draft-policy`, `bot-routing`, `ai-errors`, `gemini-request-config`, `bot-framework`). The `generateGeminiReply` callable itself, `context-builder.ts` and `rate-limit.ts` have none — tracked as TD-A2/TD-A3 in `docs/TECH-DEBT.md`. Changing those files means reasoning about lease, replay, cancellation and concurrency release by hand, and a real-room smoke test (streaming, cancel, usage metadata, rate limit, provider error) before production.
+Policy modules have unit coverage (`model-policy`, `grounding-policy`, `draft-policy`, `bot-routing`, `ai-errors`, `gemini-request-config`, `bot-framework`). `context-builder.ts` and `rate-limit.ts` gained theirs in TD-A3, on top of `functions/tests/helpers/firestore-fake.ts` — an in-memory Firestore that buffers transaction writes until commit and drops documents missing the ordered field, because both behaviours change what the code under test sees. Extend that fake rather than mocking Firestore a second way.
+
+The `generateGeminiReply` callable itself still has none — tracked as TD-A2 in `docs/TECH-DEBT.md`. Changing it means reasoning about lease, replay, cancellation and concurrency release by hand, and a real-room smoke test (streaming, cancel, usage metadata, rate limit, provider error) before production.
 
 ## Read next
 
