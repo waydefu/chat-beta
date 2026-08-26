@@ -212,6 +212,11 @@ without its index ships a Function that cannot run.
 - Observe for 24 hours, then hold the seven-day gate before removing the legacy
   RTC trio, `realtime/rooms/{roomKey}/presence` and the legacy push token
   documents. Earliest cleanup is 2026-08-21.
+- **2026-08-26**: the `realtime/rooms/{roomKey}/presence` rules and code were
+  removed (TD-L2). Deploying the `database_rules` phase makes the node
+  default-deny. Any residual data written by clients that never fired their
+  `onDisconnect` stays until an operator deletes it — a one-time RTDB write,
+  listed under Immediate follow-up.
 
 ### P3 correctness closure (2026-08-17)
 
@@ -388,6 +393,17 @@ production-ready until their respective gates pass.
    | V1 RTC trio (TD-L1) | never present to remove — see below | delete the three deployed Functions |
    | legacy push token documents (TD-L3) | compatibility delete must stay | blocked on the `pushTokenClaims` read this list already owes |
 8. Update privacy/terms before enabling Gemini, R2, LiveKit, or Algolia for users.
+9. After the `database_rules` phase ships TD-L2, delete any residual legacy room
+   presence data. The node is already unreachable from every client, so this is
+   housekeeping rather than a fix, and it must be done per room key — there is no
+   wildcard delete in RTDB:
+
+   ```bash
+   firebase database:get /realtime/rooms --shallow --project f-chat-wayde-fu
+   firebase database:remove /realtime/rooms/<roomKey>/presence --project f-chat-wayde-fu
+   ```
+
+   Confirm each key from the shallow listing first. Do not record room keys in Git.
 
 ## Operational checks
 
