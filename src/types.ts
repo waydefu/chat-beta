@@ -159,11 +159,6 @@ export interface RoomReadState {
   updatedAt?: TimestampLike | null;
 }
 
-export interface UserProfile {
-  displayName?: string;
-  photoURL?: string;
-}
-
 export interface OnlineUser {
   uid: string;
   displayName: string;
@@ -175,16 +170,6 @@ export interface Reaction {
   userId: string;
   emoji: string;
   updatedAt?: TimestampLike | null;
-}
-
-export interface BotProfile {
-  id: string;
-  displayName: string;
-  type: 'bot';
-  provider: string;
-  model: string;
-  capabilities: string[];
-  avatarURL?: string;
 }
 
 export type Unsubscribe = () => void;

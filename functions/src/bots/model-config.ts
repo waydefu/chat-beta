@@ -8,10 +8,6 @@ const CACHE_MS = 5 * 60_000;
 const ERROR_CACHE_MS = 60_000;
 let cached: { value: ModelChoice; expiresAt: number } | undefined;
 
-export function resetGeminiModelCache(): void {
-  cached = undefined;
-}
-
 export async function stableGeminiModel(now = Date.now()): Promise<ModelChoice> {
   if (cached && cached.expiresAt > now) return cached.value;
   try {
