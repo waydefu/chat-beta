@@ -209,28 +209,44 @@ describe('Firestore room ACL', () => {
 describe('Realtime Database room ACL', () => {
   it('denies room state when the membership mirror is missing', async () => {
     const alice = testDatabase(environment.authenticatedContext('alice'));
-    await assertFails(get(ref(alice, `realtime/rooms/${ROOM_KEY}/presence`)));
-    await assertFails(set(ref(alice, `realtime/rooms/${ROOM_KEY}/presence/alice/connections/tab-1`), {
-      displayName: 'Alice', connectedAt: Date.now(),
+    await assertFails(get(ref(alice, `realtime/rooms/${ROOM_KEY}/typing`)));
+    await assertFails(set(ref(alice, `realtime/rooms/${ROOM_KEY}/typing/alice/tab-1`), {
+      displayName: 'Alice', updatedAt: Date.now(),
     }));
   });
 
   it('allows a mirrored member to read the room and write only their own connection', async () => {
     await seedMirror();
     const alice = testDatabase(environment.authenticatedContext('alice'));
-    await assertSucceeds(get(ref(alice, `realtime/rooms/${ROOM_KEY}/presence`)));
-    await assertSucceeds(set(ref(alice, `realtime/rooms/${ROOM_KEY}/presence/alice/connections/tab-1`), {
-      displayName: 'Alice', connectedAt: Date.now(),
+    await assertSucceeds(get(ref(alice, `realtime/rooms/${ROOM_KEY}/typing`)));
+    await assertSucceeds(set(ref(alice, `realtime/rooms/${ROOM_KEY}/typing/alice/tab-1`), {
+      displayName: 'Alice', updatedAt: Date.now(),
     }));
-    await assertFails(set(ref(alice, `realtime/rooms/${ROOM_KEY}/presence/bob/connections/tab-1`), {
-      displayName: 'Alice', connectedAt: Date.now(),
+    await assertFails(set(ref(alice, `realtime/rooms/${ROOM_KEY}/typing/bob/tab-1`), {
+      displayName: 'Alice', updatedAt: Date.now(),
     }));
   });
 
   it('isolates rooms even when the user has a mirror elsewhere', async () => {
     await seedMirror();
     const alice = testDatabase(environment.authenticatedContext('alice'));
-    await assertFails(get(ref(alice, 'realtime/rooms/b3RoZXI/presence')));
+    await assertFails(get(ref(alice, 'realtime/rooms/b3RoZXI/typing')));
+  });
+
+  /**
+   * The legacy per-room presence mirror is gone (TD-L2). Global presence at
+   * `realtime/presence/{uid}` replaced it, and room presence is now derived by
+   * intersecting active membership with that node rather than stored twice.
+   * Without a rule of its own the path falls through to default-deny, and this
+   * pins that: an active member — the one identity the old rule admitted —
+   * cannot write it either.
+   */
+  it('refuses the removed legacy room presence path, even to an active member', async () => {
+    await seedMirror();
+    const alice = testDatabase(environment.authenticatedContext('alice'));
+    await assertFails(set(ref(alice, `realtime/rooms/${ROOM_KEY}/presence/alice/connections/tab-1`), {
+      displayName: 'Alice', connectedAt: Date.now(),
+    }));
   });
 
   it('fails closed immediately after a mirror is revoked', async () => {
@@ -252,11 +268,11 @@ describe('Realtime Database room ACL', () => {
   it('supports multiple tabs owned by the same active member', async () => {
     await seedMirror();
     const alice = testDatabase(environment.authenticatedContext('alice'));
-    await assertSucceeds(set(ref(alice, `realtime/rooms/${ROOM_KEY}/presence/alice/connections/tab-1`), {
-      displayName: 'Alice', connectedAt: Date.now(),
+    await assertSucceeds(set(ref(alice, `realtime/rooms/${ROOM_KEY}/typing/alice/tab-1`), {
+      displayName: 'Alice', updatedAt: Date.now(),
     }));
-    await assertSucceeds(set(ref(alice, `realtime/rooms/${ROOM_KEY}/presence/alice/connections/tab-2`), {
-      displayName: 'Alice', connectedAt: Date.now(),
+    await assertSucceeds(set(ref(alice, `realtime/rooms/${ROOM_KEY}/typing/alice/tab-2`), {
+      displayName: 'Alice', updatedAt: Date.now(),
     }));
   });
 });
@@ -296,9 +312,9 @@ describe('Global presence ACL', () => {
     });
 
     // Revoked from the room: the room mirror is closed to her immediately.
-    await assertFails(get(ref(alice, `realtime/rooms/${ROOM_KEY}/presence`)));
-    await assertFails(set(ref(alice, `realtime/rooms/${ROOM_KEY}/presence/alice/connections/tab-1`), {
-      displayName: 'Alice', connectedAt: Date.now(),
+    await assertFails(get(ref(alice, `realtime/rooms/${ROOM_KEY}/typing`)));
+    await assertFails(set(ref(alice, `realtime/rooms/${ROOM_KEY}/typing/alice/tab-1`), {
+      displayName: 'Alice', updatedAt: Date.now(),
     }));
     // Global presence is untouched by that, which is the whole point.
     await assertSucceeds(set(ref(alice, 'realtime/presence/alice/connections/tab-1'), connection));

@@ -39,16 +39,6 @@
               ".write": false
             }
           },
-          "presence": {
-            "$uid": {
-              "connections": {
-                "$connectionId": {
-                  ".write": "auth != null && auth.uid === $uid && root.child('realtime/rooms').child($roomKey).child('members').child(auth.uid).child('status').val() === 'active'",
-                  ".validate": "!newData.exists() || (newData.hasChildren(['connectedAt', 'displayName']) && newData.child('connectedAt').isNumber() && newData.child('displayName').isString() && newData.child('displayName').val().length <= 100)"
-                }
-              }
-            }
-          },
           "typing": {
             "$uid": {
               "$connectionId": {

@@ -51,11 +51,9 @@ async function removeRealtimeAccessAtKey(
     if (!mirrorTransitionAllowed(versions[uid], version, 'revoke')) return;
 
     const members = (value.members ?? {}) as Record<string, unknown>;
-    const presence = (value.presence ?? {}) as Record<string, unknown>;
     const typing = (value.typing ?? {}) as Record<string, unknown>;
     const activity = (value.activity ?? {}) as Record<string, unknown>;
     delete members[uid];
-    delete presence[uid];
     delete typing[uid];
     delete activity[uid];
     versions[uid] = {
@@ -66,7 +64,6 @@ async function removeRealtimeAccessAtKey(
     };
     value.members = members;
     value.membershipVersions = versions;
-    value.presence = presence;
     value.typing = typing;
     value.activity = activity;
     return value;
@@ -81,17 +78,14 @@ async function removeOrphanRealtimeAccess(key: string, uid: string): Promise<voi
     const value = current ?? {};
     const members = (value.members ?? {}) as Record<string, unknown>;
     const versions = (value.membershipVersions ?? {}) as Record<string, unknown>;
-    const presence = (value.presence ?? {}) as Record<string, unknown>;
     const typing = (value.typing ?? {}) as Record<string, unknown>;
     const activity = (value.activity ?? {}) as Record<string, unknown>;
     delete members[uid];
-    delete presence[uid];
     delete typing[uid];
     delete activity[uid];
     versions[uid] = { status: 'revoked', version: 0, updatedAt: Date.now(), reason: 'orphan' };
     value.members = members;
     value.membershipVersions = versions;
-    value.presence = presence;
     value.typing = typing;
     value.activity = activity;
     return value;
