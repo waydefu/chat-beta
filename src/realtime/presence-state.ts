@@ -15,16 +15,6 @@ export interface PresenceConnectionState {
 export const PRESENCE_HEARTBEAT_MS = 45_000;
 export const PRESENCE_STALE_AFTER_MS = PRESENCE_HEARTBEAT_MS * 3;
 
-/**
- * Clients from before heartbeats existed write `updatedAt` once at connect and
- * never touch it again, so the strict window would hide people who are sitting
- * right there. They get a long window instead of an exemption: a user who never
- * reloads stays visible while they keep the tab open, and a connection they
- * abandoned still disappears the same day. Delete this once the seven-day
- * legacy gate closes and no pre-heartbeat client can still be connected.
- */
-export const PRESENCE_LEGACY_TRUST_MS = 12 * 60 * 60_000;
-
 function isLive(connection: PresenceConnectionState, serverNow: number): boolean {
   if (connection.state !== 'online' && connection.state !== 'away') return false;
   const { connectedAt, updatedAt } = connection;
@@ -34,13 +24,10 @@ function isLive(connection: PresenceConnectionState, serverNow: number): boolean
   // The rules require both timestamps, so this is unreachable in production.
   // If it ever happens, show the user rather than hide them over bad metadata.
   if (stamp === null) return true;
-  // Only a heartbeat moves `updatedAt` past `connectedAt`. A connection where
-  // they are still equal is either pre-heartbeat or younger than one beat, and
-  // both want the forgiving window.
-  const heartbeating = typeof connectedAt === 'number'
-    && typeof updatedAt === 'number'
-    && updatedAt > connectedAt;
-  return serverNow - stamp < (heartbeating ? PRESENCE_STALE_AFTER_MS : PRESENCE_LEGACY_TRUST_MS);
+  // One window for every connection. A freshly established node has not beaten
+  // yet, but its stamp is the connect time, so it stays inside the window until
+  // long after the first beat is due.
+  return serverNow - stamp < PRESENCE_STALE_AFTER_MS;
 }
 
 export function hasOnlineConnection(
