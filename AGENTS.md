@@ -18,7 +18,7 @@ Read this file, then read only the files Task Routing names for your task. Do no
 6. `SessionScope` owns global presence, the incoming-call watcher, the LiveKit session and push listeners. `RoomScope` owns only room subscriptions. Switching rooms MUST NOT end a call or mark the user offline.
 7. Membership revocation is fail-closed and version-guarded: Firestore `revoking` → atomic RTDB mirror delete → Firestore finalize. A partial failure stays `revoking` for reconciliation. Never make it best-effort.
 8. Firestore and RTDB have no distributed transaction. The cross-store state machine is in `docs/SECURITY.md`; do not invent a second one.
-9. Legacy paths are scheduled removals, not patterns: legacy push-token documents, V1 RTC callables. Never copy them, never add a second parallel implementation of an existing subsystem. Removed already: `realtime/rooms/{roomKey}/presence` (2026-08-26, TD-L2 — the node is default-deny and room presence is derived, never stored twice).
+9. Legacy paths are scheduled removals, not patterns: legacy push-token documents, V1 RTC callables. Never copy them, never add a second parallel implementation of an existing subsystem. Removed on 2026-08-26: `PRESENCE_LEGACY_TRUST_MS` (TD-P3 — presence now reads one window) and `realtime/rooms/{roomKey}/presence` (TD-L2 — the node is default-deny and room presence is derived, never stored twice).
 10. Never commit production data: room names, user IDs, message content, migration artifacts, secret values.
 
 ## Architecture at a Glance
