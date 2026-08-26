@@ -73,8 +73,6 @@
 .message-row.you .message-profile{flex-direction:row-reverse}
 .avatar{display:grid;width:32px;height:32px;flex:0 0 32px;place-items:center;border:4px solid var(--surface-solid);border-radius:50%;background:var(--surface-3);color:var(--text);box-shadow:0 0 0 1px var(--line-strong);font-size:.7rem;font-weight:800}
 .message-row.you .avatar{background:var(--sao-orange);color:#fff}
-.avatar.has-photo,.presence-avatar.has-photo,.account-avatar.has-photo{overflow:hidden;padding:0;background:var(--surface-3)}
-.avatar img,.presence-avatar img,.account-avatar img{display:block;width:100%;height:100%;border-radius:50%;object-fit:cover}
 .message-author{color:var(--muted);font-size:.68rem;font-weight:700}
 .message-wrap{max-width:min(76%,660px)}
 .message-bubble{position:relative;padding:11px 14px 9px;border:1px solid var(--line-strong);border-left:4px solid var(--sao-blue);border-radius:var(--radius-sm);background:var(--surface);box-shadow:var(--shadow-sm)}
