@@ -29,7 +29,13 @@
   box-shadow:var(--shadow-sm);text-align:left;animation:tier-two-reveal var(--dur-2) linear both;
 }
 .room-item::after{content:"";position:absolute;top:50%;right:-7px;width:12px;height:12px;border-top:1px solid var(--line);border-right:1px solid var(--line);background:var(--surface-solid);transform:translateY(-50%) rotate(45deg);pointer-events:none}
+/* 32ms per row, from the SAO measured spec. CSS has no counter-based delay that
+   is safe to rely on yet, so the ladder is enumerated -- but it must not simply
+   stop: without the last rule a ninth room appeared with no delay at all, in
+   step with the first. Everything past the eighth holds at the cap, which also
+   stops a long list from trailing. */
 .room-item:nth-child(2){animation-delay:32ms}.room-item:nth-child(3){animation-delay:64ms}.room-item:nth-child(4){animation-delay:96ms}.room-item:nth-child(5){animation-delay:128ms}.room-item:nth-child(6){animation-delay:160ms}.room-item:nth-child(7){animation-delay:192ms}.room-item:nth-child(8){animation-delay:224ms}
+.room-item:nth-child(n+9){animation-delay:256ms}
 .room-item:hover{border-color:var(--sao-orange);background:var(--surface-solid)}
 .room-item.active{border-color:var(--sao-orange);background:linear-gradient(90deg,color-mix(in srgb,var(--sao-orange-soft) 32%,var(--surface-solid)),var(--surface-solid));color:var(--text)}
 .room-item.active::after{border-color:var(--sao-orange);background:var(--sao-orange)}
@@ -183,8 +189,9 @@
 
 .mobile-only{display:none}
 
-@keyframes tier-two-reveal{from{opacity:.18;filter:brightness(1.35)}to{opacity:1;filter:none}}
-@keyframes tier-three-open{from{opacity:0;clip-path:inset(100% 0 0)}to{opacity:1;clip-path:inset(0)}}
+/* Only transform and opacity: everything else costs a paint on the main thread,
+   and these rows animate on every room that appears. See docs/motion.md. */
+@keyframes tier-two-reveal{from{opacity:.18}to{opacity:1}}
 @keyframes alert-card-open{0%{opacity:0;transform:scale(.5,.45)}50%{opacity:1;transform:scale(1,.45)}100%{opacity:1;transform:scale(1)}}
 @keyframes message-enter{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
 @keyframes toast-enter{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:none}}
@@ -194,7 +201,10 @@
 
 @media(max-width:1050px){
   #members-toggle-btn,#close-members-btn{display:grid}
-  .presence-panel.open{animation:tier-three-open var(--dur-4) var(--ease-panel) both}
+  /* The panel's motion lives in layout.css as a `transform` transition. It used
+     to also carry a `clip-path` animation here, and the two fought: an
+     animation's transform overrides a transition's, so the wipe was layered on
+     top of the slide while costing a paint. One mechanism, not two. */
 }
 
 @media(max-width:720px){
