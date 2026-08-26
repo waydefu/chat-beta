@@ -58,7 +58,7 @@ pnpm --filter chat-lite-functions migrate:v3 -- `
 4. 在 staging 執行 concurrent start、failed connect rollback、incoming accept/reject、stale cleanup、multi-tab/multi-device Presence 與 App Check smoke。
 5. 部署 Hosting client。新版 client 只寫 global Presence，不 dual-write legacy room Presence。
 6. 觀察至少七天，確認 legacy room Presence 沒有 supported client 流量、stale call cleanup 沒有異常、incoming signal cleanup有執行。
-7. 另開 cleanup PR移除 `realtime/rooms/{roomKey}/presence` 與相應 Rules，並明確刪除舊 `startLiveKitCall`／`getLiveKitToken`／`endLiveKitCall`。不得永久 dual architecture。**路徑與 Rules 部分已於 2026-08-26 完成（TD-L2）**；`database_rules` phase 部署後該節點即 default-deny。production 殘留資料的一次性刪除仍待 operator 執行。
+7. 另開 cleanup PR移除 `realtime/rooms/{roomKey}/presence` 與相應 Rules，並明確刪除舊 `startLiveKitCall`／`getLiveKitToken`／`endLiveKitCall`。不得永久 dual architecture。**路徑與 Rules 部分已於 2026-08-26 完成（TD-L2）**；跑 `additive_rules` phase（`--only database`，只閘 `migration_verified`）後該節點即 default-deny。production 殘留資料的一次性刪除仍待 operator 執行。
 
 **MANUAL PRODUCTION STEP**：production deploy service account 必須有 Eventarc（`syncCallSignals`）、Cloud Scheduler（兩支 cleanup）、Functions/Run、Rules/Database、Secret Manager 所需最小權限。必須先以 `firebase functions:list` 與 WIF workflow dry inventory確認，不可改用個人憑證繞過。
 

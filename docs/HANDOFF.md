@@ -213,8 +213,13 @@ without its index ships a Function that cannot run.
   RTC trio, `realtime/rooms/{roomKey}/presence` and the legacy push token
   documents. Earliest cleanup is 2026-08-21.
 - **2026-08-26**: the `realtime/rooms/{roomKey}/presence` rules and code were
-  removed (TD-L2). Deploying the `database_rules` phase makes the node
-  default-deny. Any residual data written by clients that never fired their
+  removed (TD-L2). Two phases in `deploy-hosting.yml` deploy
+  `database.rules.json`: `additive_rules` (`--only database`, gated on
+  `migration_verified` alone) and `restrictive_rules` (Firestore Rules as well,
+  and additionally gated on `push_adoption_verified`). `additive_rules` is the
+  narrower of the two and is what makes the node default-deny — its name is
+  historical and describes the rollout step it was written for, not a
+  restriction on what the file may contain. Any residual data written by clients that never fired their
   `onDisconnect` stays until an operator deletes it — a one-time RTDB write,
   listed under Immediate follow-up.
 
@@ -389,11 +394,11 @@ production-ready until their respective gates pass.
    | Item | Repository | Production |
    | --- | --- | --- |
    | `PRESENCE_LEGACY_TRUST_MS` (TD-P3) | removed | nothing to do — it was only ever code |
-   | `realtime/rooms/{roomKey}/presence` (TD-L2) | rules and code removed | deploy `database_rules`, then delete residual nodes (item 9) |
+   | `realtime/rooms/{roomKey}/presence` (TD-L2) | rules and code removed | run the `additive_rules` phase, then delete residual nodes (item 9) |
    | V1 RTC trio (TD-L1) | never present to remove — see below | delete the three deployed Functions |
    | legacy push token documents (TD-L3) | compatibility delete must stay | blocked on the `pushTokenClaims` read this list already owes |
 8. Update privacy/terms before enabling Gemini, R2, LiveKit, or Algolia for users.
-9. After the `database_rules` phase ships TD-L2, delete any residual legacy room
+9. After the `additive_rules` phase ships TD-L2, delete any residual legacy room
    presence data. The node is already unreachable from every client, so this is
    housekeeping rather than a fix, and it must be done per room key — there is no
    wildcard delete in RTDB:
