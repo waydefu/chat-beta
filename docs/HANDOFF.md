@@ -1,6 +1,6 @@
 # Production handoff
 
-Last updated: 2026-08-17 (Asia/Taipei)
+Last updated: 2026-08-26 (Asia/Taipei)
 
 This document records the production state after the Chat Lite 3.0 ACL rollout. It is the starting point for the next operator. Never copy secret values, user IDs, migration artifacts, or production data into Git.
 
@@ -73,11 +73,28 @@ Notifications and stickers (deployed 2026-08-13, `notification_backend` phase):
 - `sendStickerMessage`
 
 Calls V1 (deployed 2026-08-13, `rtc_backend` phase). Superseded by V2 and no
-longer called by the shipped client; kept until the seven-day cleanup gate:
+longer called by the shipped client:
 
 - `startLiveKitCall`
 - `getLiveKitToken`
 - `endLiveKitCall`
+
+**These three exist only in production.** They are absent from
+`functions/src/index.ts` and from `functions/src/calls/livekit.ts` — verified
+2026-08-26, the names appear nowhere outside documentation — so no deploy will
+ever recreate them and no CI gate will notice them. Removing them is a direct
+production delete, and it is the whole of what TD-L1 still needs:
+
+```bash
+firebase functions:list --project f-chat-wayde-fu
+firebase functions:delete startLiveKitCall getLiveKitToken endLiveKitCall \
+  --region asia-east1 --project f-chat-wayde-fu
+```
+
+Confirm from the inventory first. Deleting a Function is not reversible by
+redeploy here, because the source is gone: restoring them would mean restoring
+the pre-V2 code. That is the intended one-way door — the V2 contract is what the
+shipped client speaks.
 
 Push ownership (deployed 2026-08-14, `push_ownership_backend` phase):
 
@@ -365,6 +382,16 @@ production-ready until their respective gates pass.
 5. Enable App Check enforcement one surface at a time after legitimate traffic is visible in metrics.
 6. Perform the rollback restore drill using a paired Firestore/RTDB backup in an isolated project.
 7. Remove legacy fields, legacy RTDB paths, compatibility branches, and explicitly inventoried legacy Functions only after the seven-day observation gate. For this rollout, the earliest planned cleanup date is 2026-08-19, and only if monitoring is clean.
+
+   Status as of 2026-08-26, since "legacy cleanup" is now four separate items
+   with four different owners:
+
+   | Item | Repository | Production |
+   | --- | --- | --- |
+   | `PRESENCE_LEGACY_TRUST_MS` (TD-P3) | removed | nothing to do — it was only ever code |
+   | `realtime/rooms/{roomKey}/presence` (TD-L2) | rules and code removed | deploy `database_rules`, then delete residual nodes (item 9) |
+   | V1 RTC trio (TD-L1) | never present to remove — see below | delete the three deployed Functions |
+   | legacy push token documents (TD-L3) | compatibility delete must stay | blocked on the `pushTokenClaims` read this list already owes |
 8. Update privacy/terms before enabling Gemini, R2, LiveKit, or Algolia for users.
 9. After the `database_rules` phase ships TD-L2, delete any residual legacy room
    presence data. The node is already unreachable from every client, so this is
