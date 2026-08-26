@@ -72,7 +72,9 @@ node node_modules/typescript/bin/tsc -p functions/tsconfig.json
 
 Policy modules have unit coverage (`model-policy`, `grounding-policy`, `draft-policy`, `bot-routing`, `ai-errors`, `gemini-request-config`, `bot-framework`). `context-builder.ts` and `rate-limit.ts` gained theirs in TD-A3, on top of `functions/tests/helpers/firestore-fake.ts` — an in-memory Firestore that buffers transaction writes until commit and drops documents missing the ordered field, because both behaviours change what the code under test sees. Extend that fake rather than mocking Firestore a second way.
 
-The `generateGeminiReply` callable itself still has none — tracked as TD-A2 in `docs/TECH-DEBT.md`. Changing it means reasoning about lease, replay, cancellation and concurrency release by hand, and a real-room smoke test (streaming, cancel, usage metadata, rate limit, provider error) before production.
+The `generateGeminiReply` callable gained its own in TD-A2. It is driven through `generateGeminiReply.run(request, response)`, with a stub `response` carrying `sendChunk` and a real `AbortSignal`. `config.ts` is deliberately **not** mocked: setting `process.env.GEMINI_API_KEY` lets the real `defineSecret` behave as it does in production. Lease, replay, cancellation, the context ceiling and the `finally` release are each pinned by a test that fails when that specific guard is removed — verified, not assumed.
+
+Coverage does not replace the real-room smoke test before production. Streaming against the live provider, a genuine client cancel, usage metadata and rate-limit behaviour are not observable from a unit test, and that gap is a property of the boundary rather than a gap in the suite.
 
 ## Read next
 
