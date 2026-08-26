@@ -74,8 +74,12 @@ export async function buildBotContext(
     const targetData = target.data();
     const targetTimestamp = targetData?.createdAt;
     if (target.exists && targetTimestamp) {
+      // Both cursors start AT the target and walk outwards. `endAt` here would
+      // instead anchor the far end of a descending scan, making `limit(5)` take
+      // the five newest messages in the room rather than the five before the
+      // target — see TD-A6.
       const [before, after] = await Promise.all([
-        messages.orderBy('createdAt', 'desc').endAt(targetTimestamp).limit(5).get(),
+        messages.orderBy('createdAt', 'desc').startAt(targetTimestamp).limit(5).get(),
         messages.orderBy('createdAt', 'asc').startAt(targetTimestamp).limit(5).get(),
       ]);
       for (const nearby of [...before.docs, ...after.docs]) {
