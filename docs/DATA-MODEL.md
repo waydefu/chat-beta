@@ -28,7 +28,7 @@ Global Presence connection 保存 `state`、`connectedAt`、`updatedAt`；multi-
 
 Typing connection 保存 `displayName` 與 `updatedAt`。與 global presence 同樣的規則：liveness 是 timestamp 判斷，不是節點存在與否。撰寫端每次按鍵刷新 `updatedAt`、停止 `TYPING_IDLE_CLEAR_MS` 後移除節點；讀取端以 server 時鐘判定 `TYPING_STALE_AFTER_MS` 內才算新鮮，並定期 sweep——孤兒節點不再變動，`onValue` 不會再為它觸發。常數集中在 `src/realtime/typing-state.ts`。
 
-`roomKey` 是 UTF-8 room ID 的 base64url。RTDB members 是 room ephemeral ACL 的 authorization mirror，不是 membership 查詢來源。`membershipVersions` 是 server-only monotonic tombstone/operation guard，避免 stale add event 覆蓋較新的撤銷。Legacy `realtime/rooms/{roomKey}/presence` 在 additive migration window 暫留 Rules，但新版 client 不再讀寫；驗證流量歸零後必須移除。
+`roomKey` 是 UTF-8 room ID 的 base64url。RTDB members 是 room ephemeral ACL 的 authorization mirror，不是 membership 查詢來源。`membershipVersions` 是 server-only monotonic tombstone/operation guard，避免 stale add event 覆蓋較新的撤銷。Legacy `realtime/rooms/{roomKey}/presence` 已於 2026-08-26 移除（TD-L2）：Rules 不再宣告該節點，因此落到 default-deny，任何 client（包含仍在該房的 active 成員）都寫不進去；`membership.ts` 的撤銷與 orphan 兩個 transaction 也不再處理它。房間在線名單是 active membership ∩ global `realtime/presence/{uid}` 的推導結果，不再第二次儲存。**production 若仍有殘留節點，需由 operator 一次性刪除**，見 [HANDOFF](HANDOFF.md)〈Immediate follow-up〉。
 
 Message 以 `kind` 判別 text、image、video、file、audio、sticker、system、call。client 可直接建立的永久訊息只有 `senderType=user` 的 text；其他受信任 metadata 由 Functions 建立。
 
