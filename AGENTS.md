@@ -166,7 +166,19 @@ Some tasks are not "fix this" but "close this out": a release preflight, a corre
 | `docs/MIGRATION.md` / `docs/FEATURE-ENABLEMENT.md` | Ordered rollout and rollback; how to enable a not-yet-live feature |
 | `docs/HANDOFF.md` | Production state, deployed functions, provider/secret status |
 | `docs/TECH-DEBT.md` / `AUDIT_FINDINGS.md` | Known debt with acceptance criteria; canonical audit registry |
+| `docs/AUDIT.md` | How an audit is run here, and what a finding must carry to be actionable |
+| `docs/ROADMAP.md` | Phase-to-delivery map. `docs/HANDOFF.md` overrides it on what is actually live |
+| `docs/SAO-UI.md` | The visual spec: geometry, colour, layout, and which numbers are measured versus adapted |
+| `docs/motion.md` | The motion spec: which properties may be animated, durations, reduced motion, and the gate enforcing each rule |
+| `docs/UI-EVOLUTION.md` | The motion work's one-time audit and batch plan. A point-in-time document; `docs/motion.md` is the standing spec |
+| `docs/UI-PHASE-3.md` | Where the controller decomposition stopped and what the next person decides first |
+| `docs/WIF-SETUP.md` | Workload Identity Federation: pool, provider, service account, and the roles granted so far |
+| `docs/ANDROID-APK.md` | Packaging the client as an Android APK: permissions, WebView behaviour, screen capture |
 | `docs/adr/` | Why a boundary exists (membership, message model, R2, AI, LiveKit, Algolia, Hosting) |
+
+Every file under `docs/` appears in this table. That is checked by
+`tests/docs-routing.test.ts`, not by anyone remembering — seven documents had
+drifted out of it before the check existed, including two written the same week.
 
 ## Context Efficiency
 
