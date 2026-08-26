@@ -1,7 +1,6 @@
-/* Single-purpose modifiers and the responsive overrides.
-   Last on purpose: these are (0,1,0) like the components they modify, so
-   they only win by source order. */
+/* Single-purpose modifiers and global state contracts. */
+[hidden]{display:none!important}
 .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
-.pending{opacity:.72}
+.pending{opacity:.74}
 .failed{outline:2px solid var(--danger)}
-.unread-dot{width:8px;height:8px;border-radius:50%;background:var(--blue);box-shadow:0 0 0 5px #4169e812}
+.unread-dot{width:9px;height:9px;border-radius:50%;background:var(--sao-orange);box-shadow:0 0 0 4px rgba(184,111,0,.15)}

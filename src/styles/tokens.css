@@ -1,3 +1,91 @@
-/* Design tokens. Custom properties only. */
-/* 2026 UI refinement layer */
-:root{font-family:Inter,"Segoe UI","Microsoft JhengHei",system-ui,sans-serif;color:#17213a;background:#edf1f8;font-synthesis:none;--navy:#07142f;--navy-2:#10285d;--blue:#4169e8;--blue-soft:#edf2ff;--surface:#fff;--surface-2:#f4f7fb;--text:#17213a;--muted:#71809b;--line:#e2e8f1;--danger:#d44855;--success:#17a477;--shadow:0 20px 70px #10204a24;color-scheme:light;--blue-strong:#3157d6;--surface-3:#edf1f7;--shadow-sm:0 8px 24px #15234812;--shadow-lg:0 28px 90px #07142f26;--radius-sm:12px;--radius-md:18px;--radius-lg:28px;--ease-emphasized-decel:cubic-bezier(.05,.7,.1,1);--ease-emphasized-accel:cubic-bezier(.3,0,.8,.15);--ease-standard:cubic-bezier(.2,0,0,1);--ease-spring:cubic-bezier(.2,1.25,.4,1);--dur-1:120ms;--dur-2:180ms;--dur-3:260ms;--dur-4:360ms;--dur-5:480ms}
+/* Canonical SAO-inspired design tokens.
+   Measured values are documented in docs/SAO-UI.md; chat-only adaptations are
+   deliberately kept here so they cannot be mistaken for source measurements. */
+:root{
+  font-family:"Microsoft JhengHei UI","Microsoft JhengHei","PingFang TC","Noto Sans TC","Segoe UI",system-ui,sans-serif;
+  color:#4f5356;
+  background:#d9dde1;
+  color-scheme:light;
+  font-synthesis:none;
+  --panel-rgb:244,248,252;
+  --panel-alpha:.94;
+  --surface:rgba(var(--panel-rgb),var(--panel-alpha));
+  --surface-solid:#f4f8fc;
+  --surface-2:#dde0e4;
+  --surface-3:#cbd0d5;
+  --text:#4f5356;
+  --muted:#666a6d;
+  --line:rgba(79,83,86,.26);
+  --line-strong:rgba(79,83,86,.46);
+  --sao-orange:#b86f00;
+  --sao-orange-soft:#f1c56f;
+  --sao-blue:#56aad2;
+  --sao-blue-deep:#397f9f;
+  --sao-blue-soft:#cde7f4;
+  --sao-blue-ink:#24647f;
+  --sao-pink:#e2637d;
+  --sao-pink-deep:#bd445f;
+  --sao-pink-soft:#e4c9d5;
+  --sao-pink-ink:#922740;
+  --action-blue:#2e708f;
+  --action-pink:#bd445f;
+  --success:#3f9d73;
+  --danger:var(--sao-pink-deep);
+  --blue:var(--sao-blue-deep);
+  --blue-strong:#2e708f;
+  --blue-soft:var(--sao-blue-soft);
+  --navy:#343638;
+  --navy-2:#4d5053;
+  --shadow-sm:3px 3px 2px rgba(70,70,72,.26);
+  --shadow:8px 12px 30px rgba(28,31,34,.2);
+  --shadow-lg:18px 24px 64px rgba(20,23,26,.3);
+  --radius-sm:4px;
+  --radius-md:7px;
+  --radius-lg:10px;
+  --sao-node:52px;
+  --sao-row:60px;
+  --sao-pitch:70px;
+  --dur-1:120ms;
+  --dur-2:180ms;
+  --dur-3:200ms;
+  --dur-4:240ms;
+  --dur-5:320ms;
+  --ease-standard:cubic-bezier(.2,0,0,1);
+  --ease-panel:cubic-bezier(.51,.78,.40,.99);
+  --ease-spring:cubic-bezier(.2,.9,.3,1);
+}
+
+:root[data-theme="dark"]{
+  color:#eef1f3;
+  background:#171a1d;
+  color-scheme:dark;
+  --panel-rgb:38,42,46;
+  --surface:rgba(var(--panel-rgb),.96);
+  --surface-solid:#262a2e;
+  --surface-2:#1c2024;
+  --surface-3:#343a3f;
+  --text:#eef1f3;
+  --muted:#b3b9bd;
+  --line:rgba(225,231,235,.22);
+  --line-strong:rgba(225,231,235,.4);
+  --sao-orange:#f0a82e;
+  --sao-orange-soft:#7a561d;
+  --sao-blue:#72c3e7;
+  --sao-blue-deep:#6fc0e4;
+  --sao-blue-soft:#294f62;
+  --sao-blue-ink:#9bd8f1;
+  --sao-pink:#ee7890;
+  --sao-pink-deep:#e56c84;
+  --sao-pink-soft:#60404d;
+  --sao-pink-ink:#ffafc0;
+  --action-blue:#2e708f;
+  --action-pink:#a8324e;
+  --blue:var(--sao-blue);
+  --blue-strong:#4ca5cd;
+  --blue-soft:var(--sao-blue-soft);
+  --navy:#eef1f3;
+  --navy-2:#c7cdd1;
+  --shadow-sm:3px 3px 2px rgba(0,0,0,.34);
+  --shadow:8px 12px 34px rgba(0,0,0,.5);
+  --shadow-lg:20px 28px 70px rgba(0,0,0,.62);
+}

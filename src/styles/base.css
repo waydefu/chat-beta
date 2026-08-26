@@ -1,9 +1,14 @@
 /* Element defaults and reset. */
+*,*::before,*::after{box-sizing:border-box}
+html{background:var(--surface-2);scrollbar-width:thin;scrollbar-color:var(--line-strong) transparent}
+body{margin:0;min-width:320px;min-height:100vh;overflow:hidden;background:var(--surface-2);color:var(--text);font-kerning:normal;line-height:1.5;letter-spacing:.006em;text-rendering:optimizeLegibility;-webkit-font-smoothing:antialiased}
 button,input,textarea{font:inherit}
-button:disabled{cursor:not-allowed;opacity:.5}
-a{color:var(--blue);text-underline-offset:3px}
-html{background:var(--surface-2)}
-body{margin:0;min-width:320px;min-height:100vh;background:var(--surface-2);color:var(--text);overflow:hidden;letter-spacing:.002em}
 button,a,input,textarea{-webkit-tap-highlight-color:transparent}
-button{cursor:pointer;transition:transform .16s ease,background-color .16s ease,border-color .16s ease,box-shadow .16s ease,opacity .16s ease}
-button:active:not(:disabled){transform:scale(.97)}
+button{cursor:pointer;transition:color var(--dur-1) linear,background-color var(--dur-1) linear,border-color var(--dur-1) linear,box-shadow var(--dur-1) linear,opacity var(--dur-1) linear}
+button:disabled{cursor:not-allowed;opacity:.48}
+a{color:var(--blue);text-underline-offset:3px}
+::selection{background:rgba(86,170,210,.3);color:inherit}
+:focus-visible{outline:3px solid rgba(86,170,210,.42);outline-offset:2px}
+*::-webkit-scrollbar{width:8px;height:8px}
+*::-webkit-scrollbar-thumb{border:2px solid transparent;border-radius:999px;background:var(--line-strong);background-clip:padding-box}
+.ico{display:block;flex:0 0 auto;width:1em;height:1em}
