@@ -4,7 +4,6 @@ import {
   hasOnlineConnection,
   onlineRoomMembers,
   presenceSummary,
-  PRESENCE_LEGACY_TRUST_MS,
   PRESENCE_STALE_AFTER_MS,
 } from '../src/realtime/presence-state';
 import type { RoomMembership } from '../src/types';
@@ -18,8 +17,9 @@ const members: RoomMembership[] = [
 const now = 100_000_000;
 // A heartbeating connection is one whose updatedAt has moved past connectedAt.
 const beating = (age: number) => ({ state: 'online', connectedAt: now - age - 1, updatedAt: now - age });
-// A pre-heartbeat client leaves the two stamps identical forever.
-const legacy = (age: number) => ({ state: 'online', connectedAt: now - age, updatedAt: now - age });
+// A connection whose updatedAt never moved past connectedAt: it was written at
+// connect and has not beaten since.
+const unbeaten = (age: number) => ({ state: 'online', connectedAt: now - age, updatedAt: now - age });
 
 describe('global presence projection', () => {
   it('stays online until the last tab or device connection is gone', () => {
@@ -40,14 +40,21 @@ describe('global presence projection', () => {
     }, now)).toBe(true);
   });
 
-  it('keeps a client that never heartbeats visible for the compatibility window', () => {
-    // The whole point: a user on the pre-heartbeat build is sitting right there.
-    expect(hasOnlineConnection({ old: legacy(PRESENCE_STALE_AFTER_MS * 10) }, now)).toBe(true);
-    expect(hasOnlineConnection({ old: legacy(PRESENCE_LEGACY_TRUST_MS - 1) }, now)).toBe(true);
+  it('keeps a connection that has not had time to beat yet', () => {
+    // A node is written at connect with the two stamps equal, and the first beat
+    // is due at 45s — comfortably inside the 135s window, so nothing special is
+    // needed to carry it there.
+    expect(hasOnlineConnection({ fresh: unbeaten(1_000) }, now)).toBe(true);
+    expect(hasOnlineConnection({ fresh: unbeaten(PRESENCE_STALE_AFTER_MS - 1) }, now)).toBe(true);
   });
 
-  it('still expires a non-heartbeating connection once the window closes', () => {
-    expect(hasOnlineConnection({ old: legacy(PRESENCE_LEGACY_TRUST_MS + 1) }, now)).toBe(false);
+  it('expires a connection that never beat, on the same window as one that did (TD-P3)', () => {
+    // This used to survive twelve hours, because `updatedAt === connectedAt` was
+    // read as "pre-heartbeat build, be forgiving". Every client heartbeats now,
+    // so that shape means an abandoned socket, and a zombie is a zombie whether
+    // or not it ever beat.
+    expect(hasOnlineConnection({ zombie: unbeaten(PRESENCE_STALE_AFTER_MS) }, now)).toBe(false);
+    expect(hasOnlineConnection({ zombie: unbeaten(12 * 60 * 60_000) }, now)).toBe(false);
   });
 
   it('shows a user rather than hiding them when the timestamps are unusable', () => {

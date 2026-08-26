@@ -6,7 +6,6 @@
  */
 export const PRESENCE_HEARTBEAT_MS = 45_000;
 export const PRESENCE_STALE_AFTER_MS = PRESENCE_HEARTBEAT_MS * 3;
-export const PRESENCE_LEGACY_TRUST_MS = 12 * 60 * 60_000;
 
 export interface PresenceConnection {
   state?: unknown;
@@ -22,8 +21,5 @@ export function isStalePresenceConnection(connection: PresenceConnection, now: n
   // Malformed rows carry no evidence either way. Deleting presence is visible
   // to users, so leave them and let the rules keep rejecting the writes.
   if (stamp === null) return false;
-  const heartbeating = typeof connectedAt === 'number'
-    && typeof updatedAt === 'number'
-    && updatedAt > connectedAt;
-  return now - stamp >= (heartbeating ? PRESENCE_STALE_AFTER_MS : PRESENCE_LEGACY_TRUST_MS);
+  return now - stamp >= PRESENCE_STALE_AFTER_MS;
 }
