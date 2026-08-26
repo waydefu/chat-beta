@@ -218,7 +218,7 @@ describe('reply context', () => {
     expect(texts).toContain('內容 m04');
   });
 
-  it('does not reach the messages before the reply target (TD-A6)', async () => {
+  it('reaches the messages before the reply target (TD-A6)', async () => {
     seedSource({ replyToId: 'old-target', createdAt: timestamp(31_000) });
     for (let index = 1; index <= 30; index += 1) {
       seedMessage(`m${String(index).padStart(2, '0')}`, index * 1_000);
@@ -229,15 +229,38 @@ describe('reply context', () => {
     const { context } = await buildBotContext(ROOM, SOURCE_ID, BOT_ID, REQUESTER);
     const texts = context.map((message) => message.text);
 
-    // This pins a defect, not a decision. The "before" half of the neighbour
-    // lookup is `orderBy('createdAt','desc').endAt(target).limit(5)`. Descending,
-    // `endAt` makes the result set run newest -> target, so `limit(5)` returns
-    // the five NEWEST messages in the room rather than the five preceding the
-    // target. Those are already in the recent window, so the query contributes
-    // nothing and the message immediately before the target is never fetched.
-    // Registered as TD-A6; flip both assertions when it is fixed.
-    expect(texts).not.toContain('內容 old-neighbour');
-    expect(texts).toContain('內容 m30');
+    // The "before" cursor must walk from the target towards older messages. With
+    // `endAt` on a descending order it anchored the wrong end and returned the
+    // room's newest five, which were already in the recent window — so this
+    // message, the one immediately preceding the target, was never fetched.
+    expect(texts).toContain('內容 old-neighbour');
+    expect(texts).toContain('內容 old-target');
+  });
+
+  it('walks five back and five forward from the target, and no further', async () => {
+    seedSource({ replyToId: 'target', createdAt: timestamp(100_000) });
+    for (let index = 1; index <= 12; index += 1) {
+      seedMessage(`before-${String(index).padStart(2, '0')}`, index * 100);
+    }
+    seedMessage('target', 5_000);
+    // Thirty newer messages push the whole "before" side out of the recent
+    // window, so those rows can only arrive through the neighbour cursor. That
+    // is what makes this test discriminate: with the old `endAt` the "before"
+    // query returned newest-five, which are recents the window already had.
+    for (let index = 1; index <= 30; index += 1) {
+      seedMessage(`after-${String(index).padStart(2, '0')}`, 5_000 + index * 100);
+    }
+
+    const { context } = await buildBotContext(ROOM, SOURCE_ID, BOT_ID, REQUESTER);
+    const texts = context.map((message) => message.text);
+
+    expect(texts).toContain('內容 target');
+    expect(texts).toContain('內容 before-12');
+    expect(texts).toContain('內容 before-09');
+    expect(texts).toContain('內容 after-04');
+    // Both cursors are inclusive of the target, so each reaches four rows past
+    // it. The fifth on either side must stay out.
+    expect(texts).not.toContain('內容 before-08');
   });
 
   it('holds the total at the window size, letting the reply target displace recents', async () => {
