@@ -72,29 +72,37 @@ Notifications and stickers (deployed 2026-08-13, `notification_backend` phase):
 - `notifyOnMessage`
 - `sendStickerMessage`
 
-Calls V1 (deployed 2026-08-13, `rtc_backend` phase). Superseded by V2 and no
-longer called by the shipped client:
+Calls V1 (deployed 2026-08-13, `rtc_backend` phase) — **deleted 2026-08-26,
+TD-L1 closed**:
 
-- `startLiveKitCall`
-- `getLiveKitToken`
-- `endLiveKitCall`
+- ~~`startLiveKitCall`~~
+- ~~`getLiveKitToken`~~
+- ~~`endLiveKitCall`~~
 
-**These three exist only in production.** They are absent from
-`functions/src/index.ts` and from `functions/src/calls/livekit.ts` — verified
-2026-08-26, the names appear nowhere outside documentation — so no deploy will
-ever recreate them and no CI gate will notice them. Removing them is a direct
-production delete, and it is the whole of what TD-L1 still needs:
+They had already been removed from the repository, so they existed *only* in
+production: no deploy could recreate them and no CI gate could see them. That is
+why this row could never converge from a repository change, and why the closing
+action was a direct production delete rather than a rollout phase.
+
+Executed with the personal Firebase login (`wayde.fu@gmail.com`), not the WIF
+deploy account, because deletion is not part of any deploy phase:
 
 ```bash
-firebase functions:list --project f-chat-wayde-fu
 firebase functions:delete startLiveKitCall getLiveKitToken endLiveKitCall \
-  --region asia-east1 --project f-chat-wayde-fu
+  --region asia-east1 --project f-chat-wayde-fu --force
 ```
 
-Confirm from the inventory first. Deleting a Function is not reversible by
-redeploy here, because the source is gone: restoring them would mean restoring
-the pre-V2 code. That is the intended one-way door — the V2 contract is what the
-shipped client speaks.
+All three reported `Successful delete operation`. A fresh
+`firebase functions:list` afterwards returns only `startLiveKitCallV2`,
+`getLiveKitTokenV2` and `endLiveKitCallV2` for those names — verified, not
+assumed.
+
+**Two consequences that are now facts rather than warnings.** The V1 contract no
+longer exists anywhere: not in the repository, not in production. And the RTC
+rollback clause in [FEATURE-ENABLEMENT](FEATURE-ENABLEMENT.md) §4.9 — "keep the
+old three so old clients can still be served" — is now void. A Hosting rollback
+can only target a release that already speaks V2; the oldest such release is
+`4bb3ad7` (2026-08-17).
 
 Push ownership (deployed 2026-08-14, `push_ownership_backend` phase):
 
