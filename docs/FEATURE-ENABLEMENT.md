@@ -207,7 +207,7 @@ firebase functions:delete startLiveKitCallV2 getLiveKitTokenV2 confirmLiveKitCal
 
 先 rollback Hosting 到前一個 release，再刪新增 Functions；保留舊 `startLiveKitCall`／`getLiveKitToken`／`endLiveKitCall` 才能服務舊 client。已結束的 calls、system messages 與未過期 incoming signals 是 recovery/history，不要在 rollback 當場手動刪除。
 
-> **這段的前提在 TD-L1 執行後即失效。** 舊三支的**來源碼已不在 repo**（2026-08-26 查核），因此一旦依 TD-L1 從 production 刪除它們，這條 rollback 路徑就不再存在——rollback Hosting 到前一個 release 會得到一個呼叫已不存在 callable 的 client。刪除之前請先確認：可接受的 RTC rollback 範圍將只剩「Hosting 回到仍使用 V2 的某個 release」。
+> **這段的前提已經失效，上面那句「保留舊三支」不再可行。** 舊三支已於 2026-08-26 依 TD-L1 從 production 刪除（見 [HANDOFF](HANDOFF.md)〈Deployed membership backend〉），而它們的來源碼更早就不在 repo，因此**無法重建**。可接受的 RTC rollback 範圍現在只剩「Hosting 回到仍使用 V2 的某個 release」，最舊的是 `4bb3ad7`（2026-08-17）。回退到比它更早的 release 會得到一個呼叫已不存在 callable 的 client。
 
 ## 5. 批次 C／D／E
 
